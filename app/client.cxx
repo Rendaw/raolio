@@ -324,13 +324,24 @@ void OpenPlayer(void)
 	{
 		auto Dialog = QFileDialog(Add, "Add media...", QDir::homepath(), "*.mp3;*.m4a;*.wav;*.ogg;*.wma;*.flv;*.flac;*.mid;*.mod;*.s3c;*.it");
 		QObject::connect(Dialog, &QFileDialog::filesSelected, [Core](const QStringList &Selected)
-			{ for (auto File : Selected) Core->Add(File.toUtf8().data()); });
+		{ 
+			for (auto File : Selected) 
+			{
+				QCryptographicHash Hash(QCryptographicHash::Md5);
+				QFile OpenedFile(File);
+				OpenedFile.open(QFile::ReadOnly);
+				while (!OpenedFile.atEnd())
+					Hash.addData(file.read(8192));
+				QByteArray hash = Hash.result();
+				Core->Add({hash.begin(), hash.end())}, File.toUtf8().data()); 
+			}
+		});
 	});
 
-	QObject::connect(Shuffle, &QAction::triggered, [Core](bool) {});
-	QObject::connect(AlphaSort, &QAction::triggered, [Core](bool) {});
+	QObject::connect(Shuffle, &QAction::triggered, [Core](bool) { Core->Shuffle(); });
+	QObject::connect(AlphaSort, &QAction::triggered, [Core](bool) { Core->Sort(); });
 	QObject::connect(Previous, &QAction::triggered, [Core](bool) {});
-	QObject::connect(Play, &QAction::triggered, [Core](bool) {});
+	QObject::connect(PlayStop, &QAction::triggered, [Core](bool) {});
 	QObject::connect(Next, &QAction::triggered, [Core](bool) {});
 
 	MainWindow->show();
