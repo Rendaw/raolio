@@ -1,7 +1,6 @@
-zmc = Define.Executable
+icbmc = Define.Executable
 {
-	Name = 'zmc',
-	Sources = Item 'client.cxx',
-	LinkFlags = '-lqt5'
+	Name = 'icbmc',
+	Sources = Item 'client.cxx'
 }
 
