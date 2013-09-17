@@ -16,5 +16,11 @@ struct String
 		std::stringstream Buffer;
 };
 
+#include <memory>
+
+// Will be included in C++14 lolololol
+template<typename T, typename... Args> std::unique_ptr<T> make_unique(Args&&... args)
+	{ return std::unique_ptr<T>(new T(std::forward<Args>(args)...)); }
+
 #endif
 

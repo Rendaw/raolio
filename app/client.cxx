@@ -1,4 +1,7 @@
 #include "regex.h"
+#include "clientcore.h"
+#include "qtaux.h"
+#include "error.h"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -15,6 +18,12 @@
 #include <QTextEdit>
 #include <QToolBar>
 #include <QAction>
+#include <QTimer>
+#include <QDir>
+#include <QFileDialog>
+#include <QCryptographicHash>
+#include <iomanip>
+#include <memory>
 
 struct ServerInfo
 {
@@ -63,7 +72,6 @@ struct ServerHistory_Unique
 
 		if (NewItem.Remember) NewItems.push_back(NewItem);
 		for (auto const &Item : Items) if (Item.Remember) NewItems.push_back(Item);
-		std::cout << "1 New item count is " << NewItems.size() << std::endl;
 
 		size_t UnrememberedCount = 0;
 		if (!NewItem.Remember) { NewItems.push_back(NewItem); ++UnrememberedCount; }
@@ -76,7 +84,6 @@ struct ServerHistory_Unique
 				++UnrememberedCount;
 			}
 		}
-		std::cout << "New item count is " << NewItems.size() << std::endl;
 		Items.swap(NewItems);
 	}
 
@@ -98,12 +105,12 @@ struct ServerHistoryQTModel_Unique : QAbstractTableModel
 				if (Index.row() == 0)
 				{
 					if (Index.column() == 0) return QVariant(false);
-					if (Index.column() == 1) return QVariant("New server...");
+					if (Index.column() == 1) return QString::fromUtf8("New server...");
 				}
 				else if (Index.row() < ServerHistory.Count() + 1)
 				{
 					if (Index.column() == 0) return QVariant(ServerHistory.Get(Index.row() - 1).Remember);
-					if (Index.column() == 1) return QVariant(QString::fromUtf8(ServerHistory.Get(Index.row() - 1).Summary().c_str()));
+					if (Index.column() == 1) return QString::fromUtf8(ServerHistory.Get(Index.row() - 1).Summary().c_str());
 				}
 				else return QVariant();
 			default:
@@ -232,7 +239,7 @@ void OpenServerSelect(void)
 
 	QObject::connect(Connect, &QPushButton::clicked, [=](bool)
 	{
-		ServerInfo Info = ServerHistory.GetDefault();
+		/*ServerInfo Info = ServerHistory.GetDefault();
 		Info.Remember = Remember->isChecked();
 		if (Info.Remember)
 			Info.RememberAs = RememberName->text().toUtf8().data();
@@ -246,8 +253,9 @@ void OpenServerSelect(void)
 		std::cout << "Server '" << Server->text().toUtf8().data() << "' host '" << Info.Host << "' port '" << Info.Port << "'" << std::endl;
 
 		ConnectWindow->close();
-		ServerHistory.Finish(Info);
+		ServerHistory.Finish(Info);*/ // libstdc++ is broken, libc++ has probs with boost
 		OpenPlayer();
+		ConnectWindow->close();
 	});
 
 	QObject::connect(Quit, &QPushButton::clicked, [=](bool)
@@ -259,92 +267,170 @@ void OpenServerSelect(void)
 	ConnectWindow->show();
 }
 
+struct PlaylistQTModel_Unique : QAbstractTableModel
+{
+	PlaylistQTModel_Unique(ClientCore &Core) : Core(Core) {}
+	int rowCount(const QModelIndex &Parent) const { return Core.GetPlaylist().size(); }
+	int columnCount(const QModelIndex &Parent) const { return 2; }
+	QVariant data(const QModelIndex &Index, int Role) const
+	{
+		if (Index.column() > 1) return QVariant();
+		if (Index.column() < 0) return QVariant();
+		if (Index.row() < 0) return QVariant();
+		if (Index.row() > Core.GetPlaylist().size()) return QVariant();
+		switch (Role)
+		{
+			case Qt::DisplayRole:
+				switch (Index.column())
+				{
+					case 0:
+					{
+						std::stringstream DisplayHash;
+						DisplayHash << std::hex << std::setw(2);
+						for (auto Byte : Core.GetPlaylist()[Index.row()].Hash) DisplayHash << static_cast<unsigned int>(Byte);
+						return QString::fromUtf8(DisplayHash.str().c_str());
+					}
+					case 1: return QString::fromUtf8(Core.GetPlaylist()[Index.row()].Filename.c_str());
+					default: return QVariant();
+				}
+			default:
+				return QVariant();
+		}
+	}
+
+	private:
+		ClientCore &Core;
+};
+
 void OpenPlayer(void)
 {
-	auto MainWindow = new QWidget;
-	MainWindow->setWindowTitle("Zarbomedia - Player");
-	MainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
-
-	auto TopLayout = new QBoxLayout(QBoxLayout::LeftToRight);
-
-	auto LeftLayout = new QBoxLayout(QBoxLayout::TopToBottom);
-	auto ChatDisplay = new QTextEdit();
-	auto ChatCursor = std::make_shared(new QTextCursor(ChatDisplay->document()));
-	LeftLayout->addWidget(ChatDisplay);
-	auto ChatEntry = new QLineEdit();
-	LeftLayout->addWidget(ChatEntry);
-	TopLayout->addLayout(LeftLayout);
-
-	auto RightLayout = new QBoxLayout(QBoxLayout::TopToBottom);
-	auto Playlist = new QTreeView();
-	RightLayout->addWidget(Playlist);
-	auto Position = new QSlider(Qt::Horizontal);
-	RightLayout->addWidget(Position);
-	auto Volume = new QSlider(Qt::Horizontal);
-	RightLayout->addWidget(Volume);
-	auto PlaylistControls = new QToolBar;
-	auto Add = new QAction("Add", nullptr);
-	PlaylistControls->addAction(Add);
-	auto Shuffle = new QAction("Shuffle", nullptr);
-	PlaylistControls->addAction(Shuffle);
-	auto AlphaSort = new QAction("AlphaSort", nullptr);
-	PlaylistControls->addAction(AlphaSort);
-	PlaylistControls->addSeparator();
-	auto Previous = new QAction("Previous", nullptr);
-	PlaylistControls->addAction(Previous);
-	auto PlayStop = new QAction("Play", nullptr);
-	PlaylistControls->addAction(PlayStop);
-	auto Next = new QAction("Next", nullptr);
-	PlaylistControls->addAction(Next);
-	RightLayout->addWidget(PlaylistControls);
-	TopLayout->addLayout(RightLayout);
-
-	MainWindow->setLayout(TopLayout);
-
-	auto CrossThread = new QTCrossThread(MainWindow);
-
-	QObject::connect(ChatEntry, &QLineEdit::returnPressed, [Core, ChatCursor, ChatEntry](void)
+	try
 	{
-		Core->Command(ChatEntry->text().fromUtf8().data());
-		ChatCursor->insertText(ChatEntry->text());
-		ChatEntry->setText("");
-	});
+		auto MainWindow = new QWidget;
+		MainWindow->setWindowTitle("Zarbomedia - Player");
+		MainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
-	auto PositionUpdateTimer = new QTimer(Position);
-	QObject::connect(PositionUpdateTimer, &QTimer::timeout, [Core, Position](void)
-		{ Position->setValue(Core->GetPosition()); });
+		struct PlayerDataType
+		{
+			ClientCore Core{};
+			PlaylistQTModel_Unique PlaylistQTModel{Core};
+		};
+		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>());
+		auto Core = &PlayerData->Data->Core;
+		auto PlaylistQTModel = &PlayerData->Data->PlaylistQTModel;
 
-	QObject::connect(Position, &QSlider::sliderReleased, [Core, Position](void)
-		{ Core->GoTo(Position->value()); });
+		auto TopLayout = new QBoxLayout(QBoxLayout::LeftToRight);
 
-	QObject::connect(Volume, &QSlider::sliderReleased, [Core, Volume](void)
-		{ Core->SetVolume(Volume->value()); });
+		auto LeftLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+		auto ChatDisplay = new QTextEdit();
+		ChatDisplay->setReadOnly(true);
+		auto ChatCursor = std::make_shared<QTextCursor>(ChatDisplay->document());
+		LeftLayout->addWidget(ChatDisplay);
+		auto ChatEntry = new QLineEdit();
+		LeftLayout->addWidget(ChatEntry);
+		TopLayout->addLayout(LeftLayout);
 
-	QObject::connect(Add, &QAction::triggered, [Core, Add](bool)
-	{
-		auto Dialog = QFileDialog(Add, "Add media...", QDir::homepath(), "*.mp3;*.m4a;*.wav;*.ogg;*.wma;*.flv;*.flac;*.mid;*.mod;*.s3c;*.it");
-		QObject::connect(Dialog, &QFileDialog::filesSelected, [Core](const QStringList &Selected)
-		{ 
-			for (auto File : Selected) 
-			{
-				QCryptographicHash Hash(QCryptographicHash::Md5);
-				QFile OpenedFile(File);
-				OpenedFile.open(QFile::ReadOnly);
-				while (!OpenedFile.atEnd())
-					Hash.addData(file.read(8192));
-				QByteArray hash = Hash.result();
-				Core->Add({hash.begin(), hash.end())}, File.toUtf8().data()); 
-			}
+		auto RightLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+		auto Playlist = new QTreeView();
+		Playlist->setModel(PlaylistQTModel);
+		RightLayout->addWidget(Playlist);
+		auto Position = new QSlider(Qt::Horizontal);
+		Position->setRange(0, 10000);
+		RightLayout->addWidget(Position);
+		auto Volume = new QSlider(Qt::Horizontal);
+		Volume->setRange(0, 10000);
+		Volume->setValue(10000);
+		RightLayout->addWidget(Volume);
+		auto PlaylistControls = new QToolBar;
+		auto Add = new QAction("Add", nullptr);
+		PlaylistControls->addAction(Add);
+		auto Shuffle = new QAction("Shuffle", nullptr);
+		PlaylistControls->addAction(Shuffle);
+		auto AlphaSort = new QAction("AlphaSort", nullptr);
+		PlaylistControls->addAction(AlphaSort);
+		PlaylistControls->addSeparator();
+		auto Previous = new QAction("Previous", nullptr);
+		PlaylistControls->addAction(Previous);
+		auto PlayStop = new QAction("Play", nullptr);
+		PlaylistControls->addAction(PlayStop);
+		auto Next = new QAction("Next", nullptr);
+		PlaylistControls->addAction(Next);
+		RightLayout->addWidget(PlaylistControls);
+		TopLayout->addLayout(RightLayout);
+
+		MainWindow->setLayout(TopLayout);
+
+		auto CrossThread = new QTCrossThread(MainWindow);
+
+		Core->LogCallback = [CrossThread, ChatCursor](std::string const &Message)
+		{
+			CrossThread->Call([ChatCursor, Message](void)
+				{ ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str())); });
+		};
+
+		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [Core, ChatCursor, ChatEntry](void)
+		{
+			Core->Command(ChatEntry->text().toUtf8().data());
+			ChatCursor->insertText(ChatEntry->text() + "\n");
+			ChatEntry->setText("");
 		});
-	});
 
-	QObject::connect(Shuffle, &QAction::triggered, [Core](bool) { Core->Shuffle(); });
-	QObject::connect(AlphaSort, &QAction::triggered, [Core](bool) { Core->Sort(); });
-	QObject::connect(Previous, &QAction::triggered, [Core](bool) {});
-	QObject::connect(PlayStop, &QAction::triggered, [Core](bool) {});
-	QObject::connect(Next, &QAction::triggered, [Core](bool) {});
+		auto PositionUpdateTimer = new QTimer(Position);
+		QObject::connect(PositionUpdateTimer, &QTimer::timeout, [Core, Position](void)
+			{ Position->setValue(Core->GetTime() * 10000); });
+		PositionUpdateTimer->start(1000);
 
-	MainWindow->show();
+		QObject::connect(Position, &QSlider::sliderReleased, [Core, Position](void)
+			{ Core->Seek((float)Position->value() / 10000.0f); });
+
+		QObject::connect(Volume, &QSlider::sliderReleased, [Core, Volume](void)
+			{ Core->SetVolume(Volume->value() / 10000.0f); });
+
+		QObject::connect(Add, &QAction::triggered, [Core, MainWindow](bool)
+		{
+			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
+				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
+				"All files (*.*)");
+			QObject::connect(Dialog, &QFileDialog::filesSelected, [Core](const QStringList &Selected)
+			{
+				for (auto File : Selected)
+				{
+					QCryptographicHash Hash(QCryptographicHash::Md5);
+					QFile OpenedFile(File);
+					OpenedFile.open(QFile::ReadOnly);
+					while (!OpenedFile.atEnd())
+						Hash.addData(OpenedFile.read(8192));
+					QByteArray HashBytes = Hash.result();
+					HashType HashArgument; std::copy(HashBytes.begin(), HashBytes.end(), HashArgument.begin());
+					Core->Add(HashArgument, File.toUtf8().data());
+				}
+			});
+			Dialog->show();
+		});
+
+		QObject::connect(Shuffle, &QAction::triggered, [Core](bool) { Core->Shuffle(); });
+
+		QObject::connect(AlphaSort, &QAction::triggered, [Core](bool) { Core->Sort(); });
+
+		QObject::connect(Previous, &QAction::triggered, [Core](bool) { Core->Previous(); });
+
+		QObject::connect(PlayStop, &QAction::triggered, [Core, PlayStop](bool)
+		{
+			Core->PlayStop();
+			if (Core->IsPlaying())
+				PlayStop->setText("Pause");
+			else PlayStop->setText("Play");
+		});
+
+		QObject::connect(Next, &QAction::triggered, [Core](bool) { Core->Next(); });
+
+		MainWindow->show();
+	}
+	catch (SystemError const &Error)
+	{
+		QMessageBox::warning(0, "Error during startup", ((std::string)Error).c_str());
+		OpenServerSelect();
+	}
 }
 
 int main(int argc, char **argv)
