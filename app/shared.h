@@ -22,5 +22,12 @@ struct String
 template<typename T, typename... Args> std::unique_ptr<T> make_unique(Args&&... args)
 	{ return std::unique_ptr<T>(new T(std::forward<Args>(args)...)); }
 
+// For making a call occur from a different thread; generally queued and idly executed
+struct CallTransferType
+{
+	virtual ~CallTransferType(void);
+	virtual void operator()(std::function<void(void)> const &Call) = 0;
+};
+
 #endif
 

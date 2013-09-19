@@ -8,7 +8,11 @@ local icmbcMocOutputs = Define.Raw
 icbmc = Define.Executable
 {
 	Name = 'icbmc',
-	Sources = Item():Include 'client.cxx':Include 'clientcore.cxx':Include(icmbcMocOutputs),
+	Sources = Item()
+		:Include 'client.cxx'
+		:Include 'clientcore.cxx'
+		:Include 'shared.cxx'
+		:Include(icmbcMocOutputs),
 	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem'
 }
 

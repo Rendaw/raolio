@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QCryptographicHash>
+#include <QSplitter>
 #include <iomanip>
 #include <memory>
 
@@ -270,11 +271,13 @@ void OpenServerSelect(void)
 struct PlaylistQTModel_Unique : QAbstractTableModel
 {
 	PlaylistQTModel_Unique(ClientCore &Core) : Core(Core) {}
-	int rowCount(const QModelIndex &Parent) const { return Core.GetPlaylist().size(); }
-	int columnCount(const QModelIndex &Parent) const { return 2; }
-	QVariant data(const QModelIndex &Index, int Role) const
+	QModelIndex index(int Row, int Column, QModelIndex const &Parent) const override { return createIndex(Row, Column); }
+	QModelIndex parent(QModelIndex const &Index) const override { return QModelIndex(); }
+	int rowCount(const QModelIndex &Parent) const override { return Core.GetPlaylist().size(); }
+	int columnCount(const QModelIndex &Parent = QModelIndex()) const override { return 5; }
+	QVariant data(const QModelIndex &Index, int Role) const override
 	{
-		if (Index.column() > 1) return QVariant();
+		if (Index.column() > columnCount(QModelIndex()) - 1) return QVariant();
 		if (Index.column() < 0) return QVariant();
 		if (Index.row() < 0) return QVariant();
 		if (Index.row() > Core.GetPlaylist().size()) return QVariant();
@@ -287,15 +290,43 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 					{
 						std::stringstream DisplayHash;
 						DisplayHash << std::hex << std::setw(2);
-						for (auto Byte : Core.GetPlaylist()[Index.row()].Hash) DisplayHash << static_cast<unsigned int>(Byte);
+						for (auto Byte : Core.GetPlaylist()[Index.row()]->Hash) DisplayHash << static_cast<unsigned int>(Byte);
 						return QString::fromUtf8(DisplayHash.str().c_str());
 					}
-					case 1: return QString::fromUtf8(Core.GetPlaylist()[Index.row()].Filename.c_str());
+					case 1: return QVariant(Core.GetPlaylist()[Index.row()]->Playing);
+					case 2: return QString::fromUtf8(Core.GetPlaylist()[Index.row()]->Artist.c_str());
+					case 3: return QString::fromUtf8(Core.GetPlaylist()[Index.row()]->Album.c_str());
+					case 4: return QString::fromUtf8(Core.GetPlaylist()[Index.row()]->Title.c_str());
 					default: return QVariant();
 				}
 			default:
 				return QVariant();
 		}
+	}
+
+	void ReportAdd(size_t Quantity)
+	{
+		assert(Quantity <= Core.GetPlaylist().size());
+		beginInsertRows(QModelIndex(), Core.GetPlaylist().size() - Quantity, Core.GetPlaylist().size() - 1);
+		endInsertRows();
+	}
+
+	void ReportRemove(size_t Which)
+	{
+		assert(Which <= Core.GetPlaylist().size());
+		beginRemoveRows(QModelIndex(), Which, Which);
+		endRemoveRows();
+	}
+
+	void ReportRearrange(void)
+	{
+		beginResetModel();
+		endResetModel();
+	}
+
+	void ReportUpdate(void)
+	{
+		dataChanged(createIndex(0, 0), createIndex(Core.GetPlaylist().size(), columnCount()));
 	}
 
 	private:
@@ -306,33 +337,29 @@ void OpenPlayer(void)
 {
 	try
 	{
-		auto MainWindow = new QWidget;
+		auto MainWindow = new QWidget();
 		MainWindow->setWindowTitle("Zarbomedia - Player");
 		MainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
-		struct PlayerDataType
-		{
-			ClientCore Core{};
-			PlaylistQTModel_Unique PlaylistQTModel{Core};
-		};
-		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>());
-		auto Core = &PlayerData->Data->Core;
-		auto PlaylistQTModel = &PlayerData->Data->PlaylistQTModel;
+		auto MainLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+		auto Splitter = new QSplitter();
 
-		auto TopLayout = new QBoxLayout(QBoxLayout::LeftToRight);
-
+		auto LeftWidget = new QWidget();
 		auto LeftLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+		LeftLayout->setMargin(0);
 		auto ChatDisplay = new QTextEdit();
 		ChatDisplay->setReadOnly(true);
 		auto ChatCursor = std::make_shared<QTextCursor>(ChatDisplay->document());
 		LeftLayout->addWidget(ChatDisplay);
 		auto ChatEntry = new QLineEdit();
 		LeftLayout->addWidget(ChatEntry);
-		TopLayout->addLayout(LeftLayout);
+		LeftWidget->setLayout(LeftLayout);
+		Splitter->addWidget(LeftWidget);
 
+		auto RightWidget = new QWidget();
 		auto RightLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+		RightLayout->setMargin(0);
 		auto Playlist = new QTreeView();
-		Playlist->setModel(PlaylistQTModel);
 		RightLayout->addWidget(Playlist);
 		auto Position = new QSlider(Qt::Horizontal);
 		Position->setRange(0, 10000);
@@ -356,28 +383,57 @@ void OpenPlayer(void)
 		auto Next = new QAction("Next", nullptr);
 		PlaylistControls->addAction(Next);
 		RightLayout->addWidget(PlaylistControls);
-		TopLayout->addLayout(RightLayout);
+		RightWidget->setLayout(RightLayout);
+		Splitter->addWidget(RightWidget);
 
-		MainWindow->setLayout(TopLayout);
+		MainLayout->addWidget(Splitter);
+		MainWindow->setLayout(MainLayout);
 
 		auto CrossThread = new QTCrossThread(MainWindow);
 
-		Core->LogCallback = [CrossThread, ChatCursor](std::string const &Message)
+		struct PlayerDataType
 		{
-			CrossThread->Call([ChatCursor, Message](void)
-				{ ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str())); });
+			PlayerDataType(CallTransferType &CallTransfer) : Core(CallTransfer) {}
+			ClientCore Core;
+			PlaylistQTModel_Unique PlaylistQTModel{Core};
+		};
+		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(*CrossThread));
+		auto Core = &PlayerData->Data->Core;
+		auto PlaylistQTModel = &PlayerData->Data->PlaylistQTModel;
+
+		Playlist->setModel(PlaylistQTModel);
+
+		Core->LogCallback = [CrossThread, ChatDisplay, ChatCursor](std::string const &Message)
+		{
+			CrossThread->Call([ChatDisplay, ChatCursor, Message](void)
+			{
+				ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str()));
+				ChatDisplay->setTextCursor(*ChatCursor);
+			});
 		};
 
-		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [Core, ChatCursor, ChatEntry](void)
+		Core->StoppedCallback = [PlayStop](void) { PlayStop->setText("Play"); };
+		Core->MediaAddedCallback = [PlaylistQTModel](void) { PlaylistQTModel->ReportAdd(1); };
+		Core->MediaRemovedCallback = [PlaylistQTModel](size_t Which) { PlaylistQTModel->ReportRemove(Which); };
+		Core->MediaUpdatedCallback = [PlaylistQTModel](void) { PlaylistQTModel->ReportUpdate(); };
+
+		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [Core, ChatDisplay, ChatCursor, ChatEntry](void)
 		{
 			Core->Command(ChatEntry->text().toUtf8().data());
 			ChatCursor->insertText(ChatEntry->text() + "\n");
 			ChatEntry->setText("");
+			ChatDisplay->setTextCursor(*ChatCursor);
+		});
+
+		QObject::connect(Playlist, &QAbstractItemView::doubleClicked, [Core](QModelIndex const &Index)
+		{
+			Core->Select(Index.row());
+			Core->PlayStop();
 		});
 
 		auto PositionUpdateTimer = new QTimer(Position);
 		QObject::connect(PositionUpdateTimer, &QTimer::timeout, [Core, Position](void)
-			{ Position->setValue(Core->GetTime() * 10000); });
+			{ if (!Position->isSliderDown()) Position->setValue(Core->GetTime() * 10000); });
 		PositionUpdateTimer->start(1000);
 
 		QObject::connect(Position, &QSlider::sliderReleased, [Core, Position](void)
@@ -386,12 +442,13 @@ void OpenPlayer(void)
 		QObject::connect(Volume, &QSlider::sliderReleased, [Core, Volume](void)
 			{ Core->SetVolume(Volume->value() / 10000.0f); });
 
-		QObject::connect(Add, &QAction::triggered, [Core, MainWindow](bool)
+		QObject::connect(Add, &QAction::triggered, [Core, PlaylistQTModel, MainWindow](bool)
 		{
 			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
 				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
 				"All files (*.*)");
-			QObject::connect(Dialog, &QFileDialog::filesSelected, [Core](const QStringList &Selected)
+			Dialog->setFileMode(QFileDialog::ExistingFiles);
+			QObject::connect(Dialog, &QFileDialog::filesSelected, [Core, PlaylistQTModel](const QStringList &Selected)
 			{
 				for (auto File : Selected)
 				{
@@ -408,21 +465,25 @@ void OpenPlayer(void)
 			Dialog->show();
 		});
 
-		QObject::connect(Shuffle, &QAction::triggered, [Core](bool) { Core->Shuffle(); });
+		QObject::connect(Shuffle, &QAction::triggered, [Core, PlaylistQTModel](bool)
+			{ Core->Shuffle(); PlaylistQTModel->ReportRearrange(); });
 
-		QObject::connect(AlphaSort, &QAction::triggered, [Core](bool) { Core->Sort(); });
+		QObject::connect(AlphaSort, &QAction::triggered, [Core, PlaylistQTModel](bool)
+			{ Core->Sort(); PlaylistQTModel->ReportRearrange(); });
 
-		QObject::connect(Previous, &QAction::triggered, [Core](bool) { Core->Previous(); });
+		QObject::connect(Previous, &QAction::triggered, [Core, PlaylistQTModel](bool)
+			{ Core->Previous(); });
 
-		QObject::connect(PlayStop, &QAction::triggered, [Core, PlayStop](bool)
+		QObject::connect(PlayStop, &QAction::triggered, [Core, PlaylistQTModel, PlayStop](bool)
 		{
-			Core->PlayStop();
 			if (Core->IsPlaying())
-				PlayStop->setText("Pause");
-			else PlayStop->setText("Play");
+				PlayStop->setText("Play");
+			else PlayStop->setText("Pause");
+			Core->PlayStop();
 		});
 
-		QObject::connect(Next, &QAction::triggered, [Core](bool) { Core->Next(); });
+		QObject::connect(Next, &QAction::triggered, [Core, PlaylistQTModel](bool)
+			{ Core->Next();  });
 
 		MainWindow->show();
 	}
