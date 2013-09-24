@@ -68,13 +68,11 @@ struct ClientCore
 
 		libvlc_instance_t *VLC;
 		libvlc_media_player_t *VLCMediaPlayer;
-		bfs::path TempPath;
 		size_t PlaylistIndex;
 		std::vector<std::unique_ptr<MediaItem>> Media;
 		std::map<HashType, MediaItem *> MediaLookup;
 
 		std::vector<std::unique_ptr<ExtraScopeItem>> ExtraScope;
-
 };
 
 #endif

@@ -22,12 +22,10 @@ ClientCore::ClientCore(CallTransferType &CallTransfer) : CallTransfer(CallTransf
 	if (!VLCMediaPlayer) throw SystemError() << "Could not initialice libVLC media player.";
 	libvlc_event_attach(libvlc_media_player_event_manager(VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
 
-	TempPath = {bfs::temp_directory_path() / bfs::unique_path()};
 }
 
 ClientCore::~ClientCore(void)
 {
-	bfs::remove_all(TempPath);
 	libvlc_media_player_release(VLCMediaPlayer);
 	libvlc_release(VLC);
 }

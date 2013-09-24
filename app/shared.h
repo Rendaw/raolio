@@ -29,5 +29,8 @@ struct CallTransferType
 	virtual void operator()(std::function<void(void)> const &Call) = 0;
 };
 
+// Minimal base for objects of unknown type that must be deleted
+struct Object { virtual ~Object(void); };
+
 #endif
 
