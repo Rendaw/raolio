@@ -37,6 +37,69 @@ struct FileCache
 
 };
 
+struct FilePieces
+{
+	FilePieces(uint64_t Size) : Runs{0, Size} {}
+	
+	bool Get(uint64_t Index)
+	{
+		bool Got = true;
+		uint64_t Position = 0;
+		for (auto const Length : Runs)
+		{
+			Position += Length;
+			if (Index < Position) return Got;
+			Got = !Got;
+		}
+		return false;
+	}
+	
+	void Set(uint64_t Index)
+	{
+		std::vector<uint64_t> NewRuns;
+		NewRuns.reserve(Runs.size() + 2);
+		bool Got = true;
+		bool Extend = false;
+		uint64_t Position = 0;
+		for (auto const Length : Runs)
+		{
+			if (!Got && (Index >= Position) && (Index < Position + Length))
+			{ 
+				if (Index == Position)
+				{
+					NewRuns.back() += 1;
+					if (Length == 1) Extend = true;
+					else NewRuns.push_back(Length - 1);
+				}
+				else if (Index == Position + Length - 1)
+				{
+					NewRuns.push_back(Length - 1);
+					NewRuns.push_back(1);
+					Extend = true;
+				}
+				else
+				{
+					NewRuns.push_back(Index - Position);
+					NewRuns.push_back(1);
+					NewRuns.push_back(Length - (Index - Position) - 1);
+				}
+			}
+			else
+			{
+				assert(!Extend || (Got == Extend));
+				if (Got && Extend)
+					NewRuns.back() += Length;
+				else NewRuns.push_back(Length); 
+			}
+			Position += Length;
+			Got = !Got;
+		}
+		Runs.swap(NewRuns);
+	}
+	
+	std::vector<uint64_t> Runs;
+};
+
 struct Core
 {
 	Core(bool Listen, std::string const &Host, uint8_t Port);
@@ -44,6 +107,7 @@ struct Core
 	private:
 		std::mutex Mutex;
 		bfs::path const TempPath;
+		uint64_t const ID;
 		FileCache LibraryCache;
 
 		bool LastPlaying = false;

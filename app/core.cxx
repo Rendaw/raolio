@@ -1,18 +1,34 @@
 #include "core.h"
 
-struct SocketData : Object
-{
+auto Clock = std::chrono::high_resolution_clock;
 
+struct CoreConnection : Network::Connection
+{
+	bool IdleWrite(void)
+	{
+	}
 };
 
 Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
 	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
+	ID{std::uniform_int_distribution<uint64_t>{}(std::mt19937{})},
 	Net
 	{
-		[this](SocketInfo *Info) // On accept
-			{ Info->ExtraData.reset(new SocketData); },
-		[this](SocketInfo *Info) // Write ready
-			{},
+		[this](SocketInfo *Info) // Idle write
+		{
+			auto &BroadcastIndex = Info->BroadcastIndex;
+			if (BroadcastIndex < OrderedMedia.size())
+			{
+				Net.Reply(NP1V1Prepare, Info, OrderedMedia[BroadcastIndex]->ID, OrderedMedia[BroadcastIndex]->Size);
+				++BroadcastIndex;
+				return true;
+			}
+			return false;
+		},
+		[this](SocketInfo *Info) // Timer
+		{
+			Net.Broadcast(NP1V1Clock, ID, SystemTime);
+		},
 		[this](SocketInfo *Info, uint64_t const &InstanceID, uint64_t const &SystemTime) // Clock
 		{
 			Net.Forward(NP1V1Clock, Info, InstanceID, SystemTime);
@@ -21,8 +37,10 @@ Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
 		[this](SocketInfo *Info, HashType const &MediaID, uint64_t const &Size) // Prepare
 		{
 			Net.Forward(NP1V1Prepare, Info, MediaID, Size);
+			
 			auto Found = Media.find(MediaID);
 			if (Found != Media.end()) return;
+			
 			Media[MediaID] = new MediaItem{TempPath / HashToString(MediaID), Size};
 			OrderedMedia.push_back(
 			Info->ExtraData->
@@ -62,7 +80,7 @@ Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
 		},
 	}
 {
-	Net.Open(Listen, Host, Port);
+	Net.Open(Listen ? new CustomListener<CoreConnection>(Host, Port) : new CoreConnection(Host, Port));
 }
 
 Core::~Core(void)

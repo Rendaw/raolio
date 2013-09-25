@@ -5,123 +5,142 @@
 #include <sys/socket.h>
 #include <netinet/sctp.h>
 
-template <typename MessageType> struct NetworkChannel;
-
-/* Specialize as follows:
-struct NetworkChannel<MessageType1>
+namespace Network
 {
-	static constexpr uint8_t Index = 0;
-	static constexpr bool Unordered = false;
-};
-*/
 
 struct SocketInfo
 {
-	std::string Host;
-	uin16_t Port;
-	int Socket;
-	std::unique_ptr<Object> ExtraData;
+	inline SocketInfo(std::string const &Host, uint16_t Port, int Socket) : Host(Host), Port(Port), Socket(Socket) {}
+	virtual ~SocketInfo(void);
+	
+	private:
+		friend class Manager;
+		
+		std::string Host;
+		uin16_t Port;
+		int Socket;
 };
 
-template <size_t MaxMessageSize, typename... MessageTypes> struct Network
+struct Connection : SocketInfo
 {
-	template <typename CallbackTypes> Network(std::function<void(SocketInfo *Info)> const &AcceptCallback, CallbackTypes const &... Callbacks)
+	Connection(std::string cosnt &Host, uint16_t Port, int Socket) : Host(Host), Port(Port), Socket(Socket) {}
+	Connection(std::string const &Host, uint16_t Port) : SocketInfo{Host, Port}
 	{
-		std::lock_guard<std::mutex> Lock(Mutex);
-		Thread.swap(std::thread{Network::Run, this, AcceptCallback, std::forward<CallbackTypes const &>(Callbacks)...});
-		InitSignal.wait(Mutex);
-	}
-
-	~Network(void)
-	{
-		Die = true;
-		NotifyThread();
-		Thread.join();
-
-		for (auto Info : Listeners) close(Info.Socket);
-		for (auto Info : Connections) close(Info.Socket);
-	}
-
-	void Open(bool Listen, std::string const &Host, uint16_t Port)
-	{
-		int Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+		Info.Socket = socket(AF_INET, SOCK_STREAM, 0);
 		if (Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << ListenPort << "): " << strerror(errno);
 		sockaddr_in AddressInfo{};
 		servaddr.sin_family = AF_INET;
 		servaddr.sin_addr.s_addr = inet_addr(Host.c_str());
 		servaddr.sin_port = htons(Port);
 
-		if (Listen)
-		{
-			if (bind(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1) throw SystemError() << "Failed to bind (" << Host << ":" << ListenPort << "): " << strerror(errno);
-			if (listen(listenSock, 2) == -1) throw SystemError() << "Failed to listen on (" << ListenPort << "): " << strerror(errno);
-
-			std::lock_guard<std::mutex> Lock(Mutex);
-			auto Info = new SocketInfo{Host, Port, Socket};
-			Listeners.push_back(Info);
-			NewListeners.push_back(Info);
-			NotifyThread();
-		}
-		else
-		{
-			int ConnectionSocket = connect(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo));
-			if (ConnectionSocket == -1) throw SystemError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
-
-			sctp_event_subscribe SCTPConfig{};
-			SCTPConfig.sctp_data_io_event = 1;
-			setsockopt(SCTPConfig, SOL_SCTP, SCTP_EVENTS, static_cast<void *>(&SCTPConfig), sizeof(SCTPConfig));
-
-			std::lock_guard<std::mutex> Lock(Mutex);
-			auto Info = new SocketInfo{Host, Port, Socket};
-			Connections.push_back(Info);
-			NewConnections.push_back(Info);
-			NotifyThread();
-		}
+		if (connect(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
+			throw SystemError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
 	}
 
 	template <typename MessageType, typename... ArgumentTypes> void Send(constexpr MessageType, ArgumentTypes const &... Arguments)
 	{
 		auto const &Data = MessageType::Write(Arguments...);
-		for (auto const &Connection : Connections)
-		{
-			int Sent = sctp_sendmsg(Socket->Socket,
-				&Data[0], Data.size(),
-				nullptr, 0, 0,
-				NetworkChannel<MessageType>::Unordered ? SCTP_UNORDERED : 0,
-				NetworkChannel<MessageType>::Index,
-				0, 0);
-			// TODO do something if sent = -1 or != Data.size?
-		}
-	}
-
-	template <typename MessageType, typename... ArgumentTypes> void Reply(constexpr MessageType, SocketInfo *Socket, ArgumentTypes const &... Arguments)
-	{
-		auto const &Data = MessageType::Write(Arguments...);
-		int Sent = sctp_sendmsg(Socket->Socket,
-			&Data[0], Data.size(),
-			nullptr, 0, 0,
-			NetworkChannel<MessageType>::Unordered ? SCTP_UNORDERED : 0,
-			NetworkChannel<MessageType>::Index,
-			0, 0);
+		int Sent = write(Socket, &Data[0], Data.size());
 		// TODO do something if sent = -1 or != Data.size?
 	}
-
-	template <typename MessageType, typename... ArgumentTypes> void Forward(constexpr MessageType, SocketInfo *From, ArgumentTypes const &... Arguments)
+	
+	virtual bool WriteReady(void) { return false; }
+	
+	void WakeIdleWrite(void)
 	{
-		auto const &Data = MessageType::Write(Arguments...);
-		for (auto const &Connection : Connections)
-		{
-			if (Connection != From) continue;
-			int Sent = sctp_sendmsg(Socket->Socket,
-				&Data[0], Data.size(),
-				nullptr, 0, 0,
-				NetworkChannel<MessageType>::Unordered ? SCTP_UNORDERED : 0,
-				NetworkChannel<MessageType>::Index,
-				0, 0);
-			// TODO do something if sent = -1 or != Data.size?
-		}
+		if (WriteActive) return;
+		WriteActive = WriteReady();
+	}
+	
+	bool Read(std::vector<uint8_t> &Buffer)
+	{
+		int Read = read(Socket, &Buffer[0], Buffer.size());
+		if (Read < 0) return false;
+		return true;
+	}
+	
+	private:
+		friend struct Manager;
+		bool WriteActive = true;
+};
+
+struct Listener
+{
+	Listener(std::string const &Host, uint16_t Port) : SocketInfo{Host, Port}
+	{
+		Socket = socket(AF_INET, SOCK_STREAM, 0);
+		if (Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << ListenPort << "): " << strerror(errno);
+		sockaddr_in AddressInfo{};
+		servaddr.sin_family = AF_INET;
+		servaddr.sin_addr.s_addr = inet_addr(Host.c_str());
+		servaddr.sin_port = htons(Port);
+
+		if (bind(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1) 
+			throw SystemError() << "Failed to bind (" << Host << ":" << Port << "): " << strerror(errno);
+		if (listen(Sock, 2) == -1) throw SystemError() << "Failed to listen on (" << ListenPort << "): " << strerror(errno);
+	}
+	
+	std::unique_ptr<SocketInfo> Accept(void)
+	{
+		sockaddr_in AddressInfo{};
+		int AddressInfoLength = sizeof(AddressInfo);
+		int ConnectionSocket = accept(ListenerInfo->Socket, &AddressInfo, &AddressInfoLength);
+		if (ConnectionSocket == -1) return nullptr; // Log?
+		return CreateConnection(inet_ntoa(AddressInfo.sin_addr), AddressInfo.sin_port, ConnectionSocket);
+	}
+	
+	virtual std::unique_ptr<SocketInfo> CreateConnection(std::string const &Host, uint16_t Port, int Socket)
+		{ return new Connection{Host, Port, Socket}; }
+};
+
+template <typename SocketInfoType, size_t MaxMessageSize, typename... MessageTypes> struct Manager
+{
+	template <typename CallbackTypes> Manager(CallbackTypes const &... Callbacks)
+	{
+		std::lock_guard<std::mutex> Lock(Mutex);
+		Thread.swap(std::thread{Network::Run, this, std::forward<CallbackTypes const &>(Callbacks)...});
+		InitSignal.wait(Mutex);
 	}
 
+	~Manager(void)
+	{
+		Die = true;
+		NotifyThread();
+		Thread.join();
+	}
+
+	void Open(std::unique_ptr<Connection> &&Connection)
+	{
+		std::lock_guard<std::mutex> Lock(Mutex);
+		NewConnections.push_back(*&Connection);
+		Connections.push_back(std::move(Connection));
+		NotifyThread();
+	}
+	
+	void Open(std::unique_ptr<Listener> &&Listener)
+	{
+		std::lock_guard<std::mutex> Lock(Mutex);
+		NewListeners.push_back(*&Listener);
+		Listeners.push_back(std::move(Listener));
+		NotifyThread();
+	}
+	
+	template <typename MessageType, typename... ArgumentTypes> void Broadcast(constexpr MessageType, ArgumentTypes const &... Arguments)
+	{
+		auto const &Data = MessageType::Write(Arguments...);
+		for (auto const &Connection : Connections) Connection->Send(MessageType, std::forward<ArgumentTypes const &>(Arguments)...);
+	}
+
+	template <typename MessageType, typename... ArgumentTypes> void Forward(constexpr MessageType, SocketInfo const &From, ArgumentTypes const &... Arguments)
+	{
+		auto const &Data = MessageType::Write(Arguments...);
+		for (auto const &Connection : Connections) 
+		{
+			if (&*Connection != &From) continue;
+			Connection->Send(MessageType, std::forward<ArgumentTypes const &>(Arguments)...);
+		}
+	}
+	
 	private:
 		std::condition_varible InitSignal;
 		std::thread Thread;
@@ -129,12 +148,12 @@ template <size_t MaxMessageSize, typename... MessageTypes> struct Network
 		mutable bool Die = false;
 
 		std::mutex Mutex;
-		std::vector<std::unique_ptr<SocketInfo>> Listeners;
-		std::vector<std::unique_ptr<SocketInfo>> Connections;
-		std::vector<SocketInfo *> NewListeners;
-		std::vector<SocketInfo *> NewConnections;
+		std::vector<std::unique_ptr<Listener>> Listeners;
+		std::vector<std::unique_ptr<Connection>> Connections;
+		std::vector<Listener *> NewListeners;
+		std::vector<Connection *> NewConnections;
 
-		static void Run(Network *This, std::function<void(SocketInfo *Socket)> const &AcceptCallback, std::function<void(SocketInfo *Socket)> const &WriteCallback, CallbackTypes const &... MessageCallbacks)
+		static void Run(Network *This, std::function<void(SocketInfo *Socket)> const &WriteCallback, CallbackTypes const &... MessageCallbacks)
 		{
 			std::lock_guard<std::mutex> Lock(This->Mutex); // Waiting for init signal wait
 
@@ -160,21 +179,22 @@ template <size_t MaxMessageSize, typename... MessageTypes> struct Network
 			Protocol::Reader<MessageTypes> Reader{std::forward<CallbackTypes const &>(MessageCallbacks)...};
 			std::vector<uint8_t> ReadBuffer(MaxMessageSize);
 
-			auto const CreateConnectionWatcher = [&](SocketInfo &Info)
+			auto const CreateConnectionWatcher = [&](Connection &Info)
 			{
-				AcceptCallback(*ConnectionInfo);
 				auto ConnectionData = new EVData<ev_io>(WriteCallback, [&](bool Read, bool Write)
 				{
 					if (Read)
 					{
-						int ReadFlags;
-						sctp_sndrcvinfo ReadInfo;
-						int Read = sctp_recvmsg(Info.Socket, &ReadBuffer[0], ReadBuffer.size(), &ReadInfo, &ReadFlags);
-						if (Read >= 0) Reader.Read(ReadBuffer, &Info);
+						if (Info.Read(ReadBuffer))
+							Reader.Read(ReadBuffer, &Info);
 						// Ignore errors?
 					}
 
-					if (Write) WriteCallback(&Info);
+					if (Write) 
+					{
+						if (Info.WriteActive)
+							Info.WriteActive = WriteCallback(&Info);
+					}
 				});
 				ev_io_init(ConnectionData, EvData<ev_io>::PreCallback, FileDescriptor, EV_READ | EV_WRITE);
 				ev_io_start(EVLoop, ConnectionData);
@@ -183,25 +203,18 @@ template <size_t MaxMessageSize, typename... MessageTypes> struct Network
 			EVData<ev_async> AsyncData([&](void)
 			{
 				/// Exit loop if dying
-				if (Die) ev_break_all(EVLoop);
+				if (Die) ev_break(EVLoop);
 
-				/// Created listeners
 				std::lock_guard<std::mutex> Lock(This->Mutex);
+				
+				/// Created listeners
 				for (auto ListenerInfo : This->NewListeners)
 				{
 					auto ListenerData = new EVData<ev_io>([ListenerInfo, &]
 					{
-						/// Accepted connection
-						sockaddr_in AddressInfo{};
-						int AddressInfoLength = sizeof(AddressInfo);
-						int ConnectionSocket = accept(ListenerInfo->Socket, &AddressInfo, &AddressInfoLength);
-						if (ConnectionSocket == -1) return; // Log?
-
+						auto ConnectionInfo = ListenerInfo->Accept();
+						if (!ConnectionInfo) return;
 						std::lock_guard<std::mutex> Lock(This->Mutex);
-						auto ConnectionInfo = new SocketInfo{};
-						ConnectionInfo->Host = inet_ntoa(AddressInfo.sin_addr);
-						ConnectionInfo->Port = AddressInfo.sin_port;
-						ConnectionInfo->Socket = ConnectionSocket;
 						This->Connections.push_back(ConnectionInfo);
 						CreateConnectionWatcher(*ConnectionInfo);
 					});
@@ -226,5 +239,7 @@ template <size_t MaxMessageSize, typename... MessageTypes> struct Network
 			ev_run(EVLoop, 0);
 		}
 };
+
+}
 
 #endif
