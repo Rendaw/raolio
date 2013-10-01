@@ -235,11 +235,13 @@ template <MessageIDType::Type IDValue, typename InVersion, typename ...Definitio
 };
 template <MessageIDType::Type IDValue, typename InVersion, typename ...Definition> constexpr MessageIDType Message<IDValue, InVersion, void(Definition...)>::ID;
 
-template <VersionIDType::Type CurrentVersionID, MessageIDType::Type CurrentMessageID, typename Enabled, typename ...MessageTypes> struct ReaderTupleElement;
+// Deserialization
+template <VersionIDType::Type CurrentVersionID, MessageIDType::Type CurrentMessageID, typename Enabled, typename HandlerType, typename ...MessageTypes> struct ReaderTupleElement;
 template
 <
 	VersionIDType::Type CurrentVersionID,
 	MessageIDType::Type CurrentMessageID,
+	typename HandlerType,
 	typename MessageType,
 	typename ...RemainingMessageTypes
 >
@@ -247,6 +249,7 @@ struct ReaderTupleElement
 <
 	CurrentVersionID,
 	CurrentMessageID,
+	HandlerType,
 	typename std::enable_if<(CurrentVersionID == *MessageType::Message::Version::ID) && (CurrentMessageID == *MessageType::Message::ID)>::type,
 	MessageType, RemainingMessageTypes...
 >
@@ -255,6 +258,7 @@ struct ReaderTupleElement
 	CurrentVersionID,
 	CurrentMessageID + 1,
 	void,
+	HandlerType,
 	RemainingMessageTypes...
 >
 {
@@ -264,7 +268,6 @@ struct ReaderTupleElement
 			struct MessageDerivedTypes<Message<ID, InVersion, void(Definition...)>>
 		{
 			typedef std::tuple<Definition...> Tuple;
-			typedef std::function<void(Definition const &...)> Callback;
 		};
 
 		typedef ReaderTupleElement
@@ -283,13 +286,8 @@ struct ReaderTupleElement
 			RemainingMessageTypes...
 		> NextElement;
 
-		typename MessageDerivedTypes<>::Callback Callback;
-
 	protected:
-		template <typename CallbackType, typename ...RemainingCallbackTypes>
-			ReaderTupleElement(CallbackType const &Callback, RemainingCallbackTypes const &...RemainingCallbacks) :
-			NextElement(std::forward<RemainingCallbackTypes const &>(RemainingCallbacks)...), Callback(Callback)
-			{}
+		ReaderTupleElement(HandlerType &Handler) : NextElement(Handler) {}
 
 		template <typename LogType, typename... ExtraTypes>
 			bool Read(LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, ExtraTypes const &... ExtraTypes)
@@ -308,7 +306,7 @@ struct ReaderTupleElement
 			typename ...ArgumentTypes,
 			typename std::enable_if<std::is_same<CallMessageType, MessageType>::value>::type* = nullptr>
 			void Call(ArgumentTypes const & ...Arguments)
-			{ Callback(std::forward<ArgumentTypes const &>(Arguments)...); }
+			{ Handler.Handle(CallMessageType{}, std::forward<ArgumentTypes const &>(Arguments)...); }
 
 		template <
 			typename CallMessageType,
@@ -335,7 +333,7 @@ struct ReaderTupleElement
 		{
 			static bool Read(ThisElement &This, LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
 			{
-				This.Callback(std::forward<ReadTypes const &>(ReadData)...);
+				This.Handler.Handle(MessageType{}, std::forward<ReadTypes const &>(ReadData)...);
 				return true;
 			}
 		};
@@ -345,6 +343,7 @@ template
 <
 	VersionIDType::Type CurrentVersionID,
 	MessageIDType::Type CurrentMessageID,
+	typename HandlerType,
 	typename MessageType,
 	typename ...RemainingMessageTypes
 >
@@ -353,6 +352,7 @@ struct ReaderTupleElement
 	CurrentVersionID,
 	CurrentMessageID,
 	typename std::enable_if<(CurrentVersionID + 1 == *MessageType::Message::Version::ID)>::type,
+	HandlerType,
 	MessageType, RemainingMessageTypes...
 >
 : ReaderTupleElement
@@ -360,6 +360,7 @@ struct ReaderTupleElement
 	CurrentVersionID + 1,
 	0,
 	void,
+	HandlerType,
 	MessageType, RemainingMessageTypes...
 >
 {
@@ -371,10 +372,7 @@ struct ReaderTupleElement
 		MessageType, RemainingMessageTypes...
 	> NextElement;
 
-	template <typename ...RemainingCallbackTypes>
-		ReaderTupleElement(RemainingCallbackTypes const &...RemainingCallbacks) :
-		NextElement(std::forward<RemainingCallbackTypes const &>(RemainingCallbacks)...)
-		{}
+	ReaderTupleElement(HandlerType &Handler) : NextElement(Handler) {}
 };
 
 template
@@ -389,6 +387,7 @@ struct ReaderTupleElement
 	void
 >
 {
+	//  I think this is the end case - if so, HandlerType &Handler should be defined here
 	typedef std::vector<uint8_t> BufferType;
 
 	template <typename LogType> bool Read(LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
@@ -409,9 +408,9 @@ template <typename ElementType> struct SubVector
       ElementType &operator[](size_t Index) { assert(*this); assert(Index < Legnth); return Data[Index]; }
 };
 
-template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
+template <typename LogType, typename HandlerType Handler, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
 {
-	template <typename ...CallbackTypes> Reader(LogType &Log, CallbackTypes const &...Callbacks) : HeadElement(Callbacks...), Log(Log) {}
+	Reader(LogType &Log, HandlerType &Handler) : HeadElement(Handler), Log(Log) {}
 
 	// StreamType must have SubVector<uint8_t> const &Read(size_t Length, size_t Offset = 0) and void Consume(size_t) methods.
 	template <typename StreamType, typename... ExtraTypes> bool Read(StreamType &&Stream, ExtraTypes const ...ExtraArguments)
@@ -441,4 +440,3 @@ template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupl
 }
 
 #endif
-

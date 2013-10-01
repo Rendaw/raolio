@@ -4,13 +4,80 @@ auto Clock = std::chrono::high_resolution_clock;
 
 struct CoreConnection : Network::Connection
 {
-	struct RequestInfo
+	struct MediaInfo
 	{
-		HashType Hash;
+		HashType ID;
 		size_t Size;
-		size_t 
 	};
-	std::vector<HashType> Requests;
+	
+	std::queuer<MediaInfo> Announce;
+	
+	struct
+	{
+		HashType ID;
+		size_t Size;
+		FilePieces Pieces;
+		std::time_point LastResponse;
+		bfs::path Path;
+		std::fstream File;
+	} Request;
+	std::vector<MediaInfo> PendingRequests;
+	struct FinishedMedia
+	{
+		HashType ID;
+		size_t Size;
+		bfs::path Path;
+	};
+	
+	struct
+	{
+		HashType ID;
+		std::fstream File;
+		size_t Chunk;
+	} DataStatus;
+	
+	Optional<FinishedMedia> ReceiveData(HashType const &ID, size_t const &Chunk, std::vector<uint8_t> const &Bytes)
+	{
+		if (MediaID != Request.ID) return {};
+		if (Chunk != Request.Pieces.Next()) return {};
+		assert(Request.File);
+		assert(Request.File.tellp() == Chunk * ChunkSize);
+		if (Bytes.size() < ChunkSize) return {}; // Probably an error condition
+		Request.Pieces.Set(Chunk);
+		Request.File.write(&Bytes[0], ChunkSize);
+		Request.LastResponse = Clock::now();
+		if (!Request.Pieces.Finished()) return {};
+		
+		Request.File.close();
+		FinishedMedia Out{Request.ID, Request.Size, Request.Path};
+		
+		if (!PendingRequests.empty())
+		{
+			Request.ID = PendingRequests.front().ID;
+			Request.Size = PendingRequests.front().Size;
+			Request.Pieces = {};
+			Request.Path = Root / FormatHash(Request.ID);
+			Request.File = {Path, std::fstream::out};
+			Send(NP1V1Request, Request.ID, Request.Pieces.Next());
+		}
+		
+		return Out;
+	}
+	
+	void PrepareData(HashType const &ID, ??? LibraryInfo)
+	{
+		if (!DataStatus.File.is_open() || (ID != DataStatus.ID))
+			DataStatus.File.swap({Out.Path, std::fstream::in});
+		DataStatus.File.seekg(From * ChunkSize);
+		DataStatus.ID = ID;
+		DataStatus.Chunk = From;
+	}
+	
+	void Review(void)
+	{
+		if (Request.File.is_open() && ((Clock::now() - Request.LastResponse) > std::chrono::time(10)))
+			Send(NP1V1Request, Connection.Request.ID, Connection.Request.Pieces.Next());
+	}
 };
 
 Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
@@ -19,50 +86,61 @@ Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
 	Net<CoreConnection>
 	{
 		[](std::string const &Host, uint16_t Port, int Socket) // Create connection
-			{ return new CoreConnection{Host, Port, Socket}; },
-		[this](Connection &Info) // Idle write
+		{ 
+			auto Out = new CoreConnection{Host, Port, Socket};
+			for (auto Item : Library.Media())
+				Out->Announce.emplace(Item->ID, Item->Size);
+			return Out;
+		},
+		[this](CoreConnection &Info) // Idle write
 		{
-			// TODO
-			auto &BroadcastIndex = Info->BroadcastIndex;
-			if (BroadcastIndex < OrderedMedia.size())
+			if (!Announce.empty())
 			{
-				Net.Reply(NP1V1Prepare, Info, OrderedMedia[BroadcastIndex]->ID, OrderedMedia[BroadcastIndex]->Size);
-				++BroadcastIndex;
+				Info.Send(NP1V1Prepare, Announce.front().ID, Announce.front().Size);
+				Announce.pop();
 				return true;
 			}
-			return false;
+			
+			if (DataStatus.File)
+			{
+				std::vector<uint8_t> Data(ChunkSize);
+				DataStatus.File.read(&Data[0], Data.size());
+				Info.Send(NP1V1Data, DataStatus.ID, Chunk++, Data);
+				return true;
+			}
 		},
-		[this](Connection &Info, uint64_t const &InstanceID, uint64_t const &SystemTime) // Clock
+		[this](CoreConnection &State, uint64_t const &InstanceID, uint64_t const &SystemTime) // Clock
 		{
-			Net.Forward(NP1V1Clock, Info, InstanceID, SystemTime);
+			Net.Forward(NP1V1Clock, State, InstanceID, SystemTime);
 			if (ClockCallback) ClockCallback(InstanceID, SystemTime);
 		},
-		[this](Connection &Info, HashType const &MediaID, uint64_t const &Size) // Prepare
+		[this](CoreConnection &State, HashType const &MediaID, uint64_t const &Size) // Prepare
 		{
-			Net.Forward(NP1V1Prepare, Info, MediaID, Size);
-			bool Found = Library.Prepare(MediaID, Size);
+			bool Found = Library.Get(MediaID, Size);
 			if (Found) return;
-			Info.Requests.push_back(MediaID);
+			PendingRequests.emplace_back(MediaID, Size);
 		},
-		[this](Connection &Info, HashType const &MediaID, uint64_t const &Chunk) // Request
+		[this](CoreConnection &State, HashType const &MediaID, uint64_t const &From) // Request
 		{
-			auto Out = Library.Get(MediaID, Chunk);
-			if (Out.empty()) return;
-			Net.Reply(NP1V1Data, Info, MediaID, Chunk, Out);
+			auto Out = Library.Get(MediaID);
+			if (!Out) return;
+			Net.WakeIdleWrite();
 		},
-		[this](Connection &Info, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes) // Data
+		[this](CoreConnection &State, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes) // Data
 		{
-			Library.Write(MediaID, Chunk * ChunkSize, Bytes);
+			auto Finished = Info.Receive(MediaID, Chunk, Bytes);
+			if (!Finished) return;
+			Library.Add(Finished.ID, Finished.Size, Finished.Path);
 		},
-		[this](Connection &Info, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime) // Play
+		[this](CoreConnection &State, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime) // Play
 		{
-			Net.Forward(NP1V1Play, Info, MediaID, MediaTime, SystemTime);
-			LastPlaying = true;
-			LastMediaTime = MediaTime;
-			LastSystemTime = SystemTime;
-			if (PlayCallback) PlayCallback(MediaTime, SystemTime);
+			Net.Forward(NP1V1Play, State, MediaID, MediaTime, SystemTime);
+			State.LastPlaying = true;
+			State.LastMediaTime = MediaTime;
+			State.LastSystemTime = SystemTime;
+			if (PlayCallback) PlayCallback(MediaID, MediaTime, SystemTime);
 		},
-		[this](Connection &Info) // Stop
+		[this](CoreConnection &Info) // Stop
 		{
 			Net.Forward(NP1V1Stop, Info);
 			LastPlaying = false;
@@ -70,16 +148,21 @@ Core::Core(bool Listen, std::string const &Host, uint8_t Port) :
 			LastSystemTime = SystemTime;
 			if (StopCallback) StopCallback();
 		},
-		[this](Connection &Info, std::string const &Message) // Chat
+		[this](CoreConnection &State, std::string const &Message) // Chat
 		{
-			Net.Forward(NP1V1Chat, Info, Message);
+			Net.Forward(NP1V1Chat, State, Message);
 			if (ChatCallback) ChatCallback(Message);
 		},
 	}
 {
 	Net.OpenTimer(10, [this](void) // Timer
 	{
+		auto Now = Clock::now();
+		
 		Net.Broadcast(NP1V1Clock, ID, SystemTime);
+		
+		for (auto State : Connections)
+			State.Review(Now);
 	});
 	Net.Open(Listen ? new CustomListener<CoreConnection>(Host, Port) : new CoreConnection(Host, Port));
 }

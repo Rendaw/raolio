@@ -107,7 +107,7 @@ struct Listener
 
 template <typename ConnectionType, typename... MessageTypes> struct Manager
 {
-	template <typename CallbackTypes> Manager(std::function<ConnectionType *(std::string const &Host, uint16_t Port, int Socket)> const &CreateConnection, std::function<bool(ConnectionType &) const &IdleWriteCallback, CallbackTypes const &... Callbacks)
+	Manager(std::function<ConnectionType *(std::string const &Host, uint16_t Port, int Socket)> const &CreateConnection)
 	{
 		std::lock_guard<std::mutex> Lock(Mutex);
 		Thread.swap(std::thread{Network::Run, this, CreateConnection, IdleWriteCallback, std::forward<CallbackTypes const &>(Callbacks)...});
