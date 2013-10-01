@@ -399,33 +399,43 @@ struct ReaderTupleElement
 	}
 };
 
+template <typename ElementType> struct SubVector
+{
+      SubVector(void) : Data{nullptr}, Length{0} {}
+      SubVector(std::vector<ElementType> const &Base, size_t Start, size_t Length) : Data{&Base[Start]}, Length{Length} {}
+      ElementType *Data;
+      size_t Length;
+      operator bool(void) { return Size > 0; }
+      ElementType &operator[](size_t Index) { assert(*this); assert(Index < Legnth); return Data[Index]; }
+};
+
 template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
 {
 	template <typename ...CallbackTypes> Reader(LogType &Log, CallbackTypes const &...Callbacks) : HeadElement(Callbacks...), Log(Log) {}
 
-	// StreamType must have ::read(char *, int) and operator! operators.
+	// StreamType must have SubVector<uint8_t> const &Read(size_t Length, size_t Offset = 0) and void Consume(size_t) methods.
 	template <typename StreamType, typename... ExtraTypes> bool Read(StreamType &&Stream, ExtraTypes const ...ExtraArguments)
 	{
-		Buffer.resize(StrictCast(HeaderSize, size_t));
-		if (!Stream.read((char *)&Buffer[0], *HeaderSize)) return true;
-		VersionIDType const VersionID = *reinterpret_cast<VersionIDType *>(&Buffer[0]);
-		MessageIDType const MessageID = *reinterpret_cast<MessageIDType *>(&Buffer[VersionIDType::Size]);
-		SizeType const DataSize = *reinterpret_cast<SizeType *>(&Buffer[VersionIDType::Size + MessageIDType::Size]);
-		Buffer.resize(StrictCast(DataSize, size_t));
-		if (!Stream.read((char *)&Buffer[0], *DataSize))
-		{
-			Log.Debug() << "End of file reached prematurely reading message body (version " << *VersionID << ", type " << *MessageID << ")";
-			assert(false);
-			return false;
-		}
-		return HeadElement::Read(Log, VersionID, MessageID, Buffer, ExtraArguments...);
+		auto Header = Buffer.Read(StrictCast(HeaderSize, size_t));
+		if (!Header) return true;
+		VersionIDType const VersionID = *reinterpret_cast<VersionIDType *>(&Header[0]);
+		MessageIDType const MessageID = *reinterpret_cast<MessageIDType *>(&Header[VersionIDType::Size]);
+		SizeType const DataSize = *reinterpret_cast<SizeType *>(&Header[VersionIDType::Size + MessageIDType::Size]);
+
+		auto Body = Buffer.Read(StrictCast(DataSize, size_t), StrictCast(HeaderSize, size_t));
+		if (!Body) return true;
+
+		bool Out = HeadElement::Read(Log, VersionID, MessageID, Body, ExtraArguments...);
+
+		Stream.Consume(StrictCast(HeaderSize + DataSize, size_t));
+
+		return Out;
 	}
 
 	private:
 		typedef ReaderTupleElement<0, 0, void, MessageTypes...> HeadElement;
 
 		LogType &Log;
-		std::vector<uint8_t> Buffer;
 };
 
 }

@@ -32,15 +32,10 @@ template <> struct NetworkChannel<NP1V1Stop> { static constexpr uint8_t Index = 
 DefineProtocolMessage(NP1V1, NP1V1Chat, void(std::string Message))
 template <> struct NetworkChannel<NP1V1Chat> { static constexpr uint8_t Index = 0; static constexpr bool Unordered = false; };
 
-struct FileCache
-{
-
-};
-
 struct FilePieces
 {
 	FilePieces(uint64_t Size) : Runs{0, Size} {}
-	
+
 	bool Get(uint64_t Index)
 	{
 		bool Got = true;
@@ -53,7 +48,7 @@ struct FilePieces
 		}
 		return false;
 	}
-	
+
 	void Set(uint64_t Index)
 	{
 		std::vector<uint64_t> NewRuns;
@@ -64,7 +59,7 @@ struct FilePieces
 		for (auto const Length : Runs)
 		{
 			if (!Got && (Index >= Position) && (Index < Position + Length))
-			{ 
+			{
 				if (Index == Position)
 				{
 					NewRuns.back() += 1;
@@ -89,15 +84,75 @@ struct FilePieces
 				assert(!Extend || (Got == Extend));
 				if (Got && Extend)
 					NewRuns.back() += Length;
-				else NewRuns.push_back(Length); 
+				else NewRuns.push_back(Length);
 			}
 			Position += Length;
 			Got = !Got;
 		}
 		Runs.swap(NewRuns);
 	}
-	
+
 	std::vector<uint64_t> Runs;
+};
+
+struct MediaLibrary
+{
+	MediaLibrary(bfs::path const &Root) : Root(Root), Count(0) {}
+
+	std::vector<uint8_t> Get(HashType const &Hash, size_t Offset, size_t Length)
+	{
+		auto File = Access(Hash);
+		File.seekg(Offset, std::ios_base::beg);
+		std::vector<uint8_t> Out(Length);
+		File.read(&Out[0], Length);
+		return Out;
+	}
+
+	void Put(HashType const &Hash, size_t Offset, std::vector<uint8_t> const &Data)
+	{
+		auto File = Access(Hash);
+		File.seekp(Offset, std::ios_base::beg);
+		File.write(&Data[0], Data.size());
+	}
+
+	private:
+		static constexpr size_t Max = 10;
+		std::fstream &Access(HashType const &Key) // Return value is temporary - may only exist until next Access call
+		{
+			for (auto &Item : Cache)
+			{
+				if (Item.Hash == Key)
+				{
+					Item.Count = Count++;
+					return Item.File;
+				}
+			}
+			assert(Cache.size() <= Max);
+			if (Cache.size() == Max)
+			{
+				auto Found = Cache.begin();
+				for (auto Item = Cache.begin(); Item != Cache.end(); ++Item)
+					if (Item->Count < Found->Count) Found = Item;
+				Cache.erase(Found);
+			}
+			Cache.emplace_back(Key, {Root / FormatHash(Key), std::fstream::in | std::fstream::out | std::fstream::binary}, ++Count);
+			return Cache.back().File;
+		}
+
+		bfs::path const Root;
+		uint64_t Count;
+		struct CacheItem
+		{
+			HashType const Key;
+			std::fstream File;
+			uint64_t Count;
+		};
+		std::vector<CacheItem> Cache;
+		struct RecordItem
+		{
+			FilePieces Pieces;
+		};
+		std::map<HashType, Record> Records;
 };
 
 struct Core
@@ -105,7 +160,6 @@ struct Core
 	Core(bool Listen, std::string const &Host, uint8_t Port);
 	~Core(void);
 	private:
-		std::mutex Mutex;
 		bfs::path const TempPath;
 		uint64_t const ID;
 		FileCache LibraryCache;
@@ -114,7 +168,10 @@ struct Core
 		uint64_t LastMediaTime;
 		uint64_t LastSystemTime;
 
-		std::map<HashType, bfs::path> Media;
+		struct LibraryItem
+		{
+		};
+		std::map<HashType, bfs::path> Library;
 
 		Network
 		<

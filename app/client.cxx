@@ -286,13 +286,7 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 			case Qt::DisplayRole:
 				switch (Index.column())
 				{
-					case 0:
-					{
-						std::stringstream DisplayHash;
-						DisplayHash << std::hex << std::setw(2);
-						for (auto Byte : Core.GetPlaylist()[Index.row()]->Hash) DisplayHash << static_cast<unsigned int>(Byte);
-						return QString::fromUtf8(DisplayHash.str().c_str());
-					}
+					case 0: return QString::fromUtf8(FormatHash(Core.GetPlaylist()[Index.row()]->Hash).c_str());
 					case 1: return QVariant(Core.GetPlaylist()[Index.row()]->Playing);
 					case 2: return QString::fromUtf8(Core.GetPlaylist()[Index.row()]->Artist.c_str());
 					case 3: return QString::fromUtf8(Core.GetPlaylist()[Index.row()]->Album.c_str());

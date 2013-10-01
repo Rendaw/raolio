@@ -11,6 +11,7 @@ icbmc = Define.Executable
 	Sources = Item()
 		:Include 'client.cxx'
 		:Include 'clientcore.cxx'
+		:Include 'network.cxx'
 		:Include 'shared.cxx'
 		:Include(icmbcMocOutputs),
 	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem'
