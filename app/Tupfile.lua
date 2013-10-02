@@ -5,15 +5,29 @@ local icmbcMocOutputs = Define.Raw
 	Command = 'moc qtaux.h > moc_qtaux.cxx'
 }
 
+local SharedObjects = Define.Objects
+{
+	Inputs = Item()
+		:Include 'shared.cxx'
+		:Include 'core.cxx'
+}
+
 icbmc = Define.Executable
 {
 	Name = 'icbmc',
 	Sources = Item()
 		:Include 'client.cxx'
 		:Include 'clientcore.cxx'
-		:Include 'network.cxx'
-		:Include 'shared.cxx'
 		:Include(icmbcMocOutputs),
-	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem'
+	Objects = SharedObjects,
+	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem -lev'
 }
 
+icbms = Define.Executable
+{
+	Name = 'icbms',
+	Sources = Item()
+		:Include 'server.cxx',
+	Objects = SharedObjects,
+	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
+}

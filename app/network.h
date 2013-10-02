@@ -8,10 +8,10 @@
 template <typename ConnectionType> struct Network
 {
 	typedef std::function<ConnectionType *(Network<ConnectionType> &Parent, std::string const &Host, uint16_t Port, int Socket, ev_loop *EVLoop)> CreateConnectionCallback;
-	
+
 	struct Connection
 	{
-		Connection(std::string const &Host, uint16_t Port, int Socket, ev_loop *EVLoop, ConnectionType *DerivedThis) : 
+		Connection(std::string const &Host, uint16_t Port, int Socket, ev_loop *EVLoop, ConnectionType *DerivedThis) :
 			Host{Host}, Port{Port}, Socket{Socket}, ReadBuffer{this->Socket}, WriteWatcher{DerivedThis, EVLoop}
 		{
 			if (Socket < 0)
@@ -26,15 +26,15 @@ template <typename ConnectionType> struct Network
 				if (connect(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
 					throw SystemError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
 			}
-			
+
 			WriteWatcher.Initialize();
 		}
 
 		~Connection(void) { assert(Socket >= 0); close(Socket); }
-		
+
 		// Network thread only
 		void WakeIdleWrite(void) { WriteWatcher.Wake(); }
-		
+
 		template <typename MessageType, typename... ArgumentTypes> void Send(constexpr MessageType, ArgumentTypes const &... Arguments)
 		{
 			auto const &Data = MessageType::Write(Arguments...);
@@ -47,7 +47,7 @@ template <typename ConnectionType> struct Network
 			std::string Host;
 			uin16_t Port;
 			int Socket;
-			
+
 			struct ReadBufferType
 			{
 				ReadBufferType(int &Socket) : Socket(Socket) {}
@@ -75,17 +75,17 @@ template <typename ConnectionType> struct Network
 				int &Socket;
 				std::vector<uint8_t> Buffer;
 			} ReadBuffer
-			
+
 			struct WriteWatcherType : ev_io
 			{
 				WriteWatcherType(ConnectionType *This, ev_loop *EVLoop) : This{This}, EVLoop{EVLoop} {}
-				
+
 				void Initialize(int Socket)
 				{
 					ev_io_init(this, Callback, Socket, EV_WRITE);
 					ev_io_start(EVLoop, this);
 				}
-				
+
 				void Wake(void) { ev_io_start(EVLoop, this); }
 
 				static void Callback(ev_loop *, ev_io *Data, int EventFlags)
@@ -95,7 +95,7 @@ template <typename ConnectionType> struct Network
 					if (!Watcher->This->IdleWrite())
 						ev_io_stop(Watcher->EVLoop, Data);
 				}
-				
+
 				ConnectionType *This;
 				ev_loop *EVLoop;
 			} WriteWatcher;
@@ -298,7 +298,8 @@ template <typename ConnectionType> struct Network
 			{
 				TimerData.reset(new EVData<ev_timer>([&]
 				{
-					for (auto Connection : Connections) Connection->HandleTimer();
+					auto Now = std::chrono::high_resolution_clock::now();
+					for (auto Connection : Connections) Connection->HandleTimer(Now);
 					Directive.Callback();
 					ev_timer_set(TimerData, *TimerPeriod, 0);
 					ev_timer_start(EVLoop, TimerData);
@@ -313,7 +314,5 @@ template <typename ConnectionType> struct Network
 			ev_run(EVLoop, 0);
 		}
 };
-
-}
 
 #endif
