@@ -236,12 +236,11 @@ template <MessageIDType::Type IDValue, typename InVersion, typename ...Definitio
 template <MessageIDType::Type IDValue, typename InVersion, typename ...Definition> constexpr MessageIDType Message<IDValue, InVersion, void(Definition...)>::ID;
 
 // Deserialization
-template <VersionIDType::Type CurrentVersionID, MessageIDType::Type CurrentMessageID, typename Enabled, typename HandlerType, typename ...MessageTypes> struct ReaderTupleElement;
+template <VersionIDType::Type CurrentVersionID, MessageIDType::Type CurrentMessageID, typename Enabled, typename ...MessageTypes> struct ReaderTupleElement;
 template
 <
 	VersionIDType::Type CurrentVersionID,
 	MessageIDType::Type CurrentMessageID,
-	typename HandlerType,
 	typename MessageType,
 	typename ...RemainingMessageTypes
 >
@@ -249,7 +248,6 @@ struct ReaderTupleElement
 <
 	CurrentVersionID,
 	CurrentMessageID,
-	HandlerType,
 	typename std::enable_if<(CurrentVersionID == *MessageType::Message::Version::ID) && (CurrentMessageID == *MessageType::Message::ID)>::type,
 	MessageType, RemainingMessageTypes...
 >
@@ -258,7 +256,6 @@ struct ReaderTupleElement
 	CurrentVersionID,
 	CurrentMessageID + 1,
 	void,
-	HandlerType,
 	RemainingMessageTypes...
 >
 {
@@ -273,31 +270,21 @@ struct ReaderTupleElement
 		typedef ReaderTupleElement
 		<
 			CurrentVersionID,
-			CurrentMessageID,
-			void,
-			MessageType, RemainingMessageTypes...
-		> ThisElement;
-
-		typedef ReaderTupleElement
-		<
-			CurrentVersionID,
 			CurrentMessageID + 1,
 			void,
 			RemainingMessageTypes...
 		> NextElement;
 
 	protected:
-		ReaderTupleElement(HandlerType &Handler) : NextElement(Handler) {}
-
-		template <typename LogType, typename... ExtraTypes>
-			bool Read(LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, ExtraTypes const &... ExtraTypes)
+		template <typename LogType, typename HandlerType, typename... ExtraTypes>
+			bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, ExtraTypes const &... ExtraTypes)
 		{
 			if ((VersionID == MessageType::Version::ID) && (MessageID == MessageType::ID))
 			{
 				SizeType Offset{(SizeType::Type)0};
-				return ReadImplementation<LogType, typename MessageDerivedTypes<>::Tuple, std::tuple<ExtraTypes...>>::Read(*this, Log, VersionID, MessageID, Buffer, Offset, std::forward<ExtraTypes const &>(ExtraTypes)...);
+				return ReadImplementation<LogType, typename MessageDerivedTypes<>::Tuple, std::tuple<ExtraTypes...>>::Read(Log, Handler, VersionID, MessageID, Buffer, Offset, std::forward<ExtraTypes const &>(ExtraTypes)...);
 			}
-			return NextElement::Read(Log, VersionID, MessageID, Buffer);
+			return NextElement::Read(Log, Handler, VersionID, MessageID, Buffer);
 		}
 
 	public:
@@ -316,24 +303,24 @@ struct ReaderTupleElement
 			{ NextElement::template Call<CallMessageType, ArgumentTypes...>(std::forward<ArgumentTypes const &>(Arguments)...); }
 
 	private:
-		template <typename LogType, typename UnreadTypes, typename ReadTypes> struct ReadImplementation {};
-		template <typename LogType, typename NextType, typename... RemainingTypes, typename... ReadTypes>
-			struct ReadImplementation<LogType, std::tuple<NextType, RemainingTypes...>, std::tuple<ReadTypes...>>
+		template <typename LogType, typename HandlerType, typename UnreadTypes, typename ReadTypes> struct ReadImplementation {};
+		template <typename LogType, typename HandlerType, typename NextType, typename... RemainingTypes, typename... ReadTypes>
+			struct ReadImplementation<LogType, HandlerType, std::tuple<NextType, RemainingTypes...>, std::tuple<ReadTypes...>>
 		{
-			static bool Read(ThisElement &This, LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
+			static bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
 			{
 				NextType Data;
 				if (!ProtocolRead(Log, VersionID, MessageID, Buffer, Offset, Data)) return false;
-				return ReadImplementation<LogType, std::tuple<RemainingTypes...>, std::tuple<ReadTypes..., NextType>>::Read(This, Log, VersionID, MessageID, Buffer, Offset, std::forward<ReadTypes const &>(ReadData)..., std::move(Data));
+				return ReadImplementation<LogType, std::tuple<RemainingTypes...>, std::tuple<ReadTypes..., NextType>>::Read(Log, Handler, VersionID, MessageID, Buffer, Offset, std::forward<ReadTypes const &>(ReadData)..., std::move(Data));
 			}
 		};
 
-		template <typename LogType, typename... ReadTypes>
+		template <typename LogType, typename HandlerType, typename... ReadTypes>
 			struct ReadImplementation<LogType, std::tuple<>, std::tuple<ReadTypes...>>
 		{
-			static bool Read(ThisElement &This, LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
+			static bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
 			{
-				This.Handler.Handle(MessageType{}, std::forward<ReadTypes const &>(ReadData)...);
+				Handler.Handle(MessageType{}, std::forward<ReadTypes const &>(ReadData)...);
 				return true;
 			}
 		};
@@ -343,7 +330,6 @@ template
 <
 	VersionIDType::Type CurrentVersionID,
 	MessageIDType::Type CurrentMessageID,
-	typename HandlerType,
 	typename MessageType,
 	typename ...RemainingMessageTypes
 >
@@ -352,7 +338,6 @@ struct ReaderTupleElement
 	CurrentVersionID,
 	CurrentMessageID,
 	typename std::enable_if<(CurrentVersionID + 1 == *MessageType::Message::Version::ID)>::type,
-	HandlerType,
 	MessageType, RemainingMessageTypes...
 >
 : ReaderTupleElement
@@ -360,7 +345,6 @@ struct ReaderTupleElement
 	CurrentVersionID + 1,
 	0,
 	void,
-	HandlerType,
 	MessageType, RemainingMessageTypes...
 >
 {
@@ -371,8 +355,6 @@ struct ReaderTupleElement
 		void,
 		MessageType, RemainingMessageTypes...
 	> NextElement;
-
-	ReaderTupleElement(HandlerType &Handler) : NextElement(Handler) {}
 };
 
 template
@@ -387,10 +369,9 @@ struct ReaderTupleElement
 	void
 >
 {
-	//  I think this is the end case - if so, HandlerType &Handler should be defined here
 	typedef std::vector<uint8_t> BufferType;
-
-	template <typename LogType> bool Read(LogType &Log, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
+	
+	template <typename LogType, typename HandlerType> bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
 	{
 		Log.Warn() << "Read message with invalid version or message type (version " << *VersionID << ") with invalid message type: " << *MessageID;
 		assert(false);
@@ -408,12 +389,12 @@ template <typename ElementType> struct SubVector
       ElementType &operator[](size_t Index) { assert(*this); assert(Index < Legnth); return Data[Index]; }
 };
 
-template <typename LogType, typename HandlerType Handler, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
+template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
 {
-	Reader(LogType &Log, HandlerType &Handler) : HeadElement(Handler), Log(Log) {}
+	Reader(LogType &Log) : Log(Log) {}
 
 	// StreamType must have SubVector<uint8_t> const &Read(size_t Length, size_t Offset = 0) and void Consume(size_t) methods.
-	template <typename StreamType, typename... ExtraTypes> bool Read(StreamType &&Stream, ExtraTypes const ...ExtraArguments)
+	template <typename StreamType, typename HandlerType, typename... ExtraTypes> bool Read(StreamType &&Stream, HandlerType &Handler, ExtraTypes const ...ExtraArguments)
 	{
 		auto Header = Buffer.Read(StrictCast(HeaderSize, size_t));
 		if (!Header) return true;
@@ -424,7 +405,7 @@ template <typename LogType, typename HandlerType Handler, typename ...MessageTyp
 		auto Body = Buffer.Read(StrictCast(DataSize, size_t), StrictCast(HeaderSize, size_t));
 		if (!Body) return true;
 
-		bool Out = HeadElement::Read(Log, VersionID, MessageID, Body, ExtraArguments...);
+		bool Out = HeadElement::Read(Log, Handler, VersionID, MessageID, Body, ExtraArguments...);
 
 		Stream.Consume(StrictCast(HeaderSize + DataSize, size_t));
 
