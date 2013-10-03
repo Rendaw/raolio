@@ -160,6 +160,24 @@ template <typename ConnectionType> struct Network
 		NotifyOpen();
 	}
 
+	void Transfer(std::function<void(void)> const &Call)
+	{
+		{
+			std::lock_guard<std::mutex> Lock(Mutex);
+			TransferQueue.push_back(Call);
+		}
+		NotifyCall();
+	}
+
+	void Schedule(float Seconds, std::function<void(void)> const &Call)
+	{
+		{
+			std::lock_guard<std::mutex> Lock(Mutex);
+			ScheduleQueue.push_back({Seconds, Call});
+		}
+		NotifySchedule();
+	}
+
 	protected:
 		// Network thread only
 		template <typename MessageType, typename... ArgumentTypes> void Broadcast(constexpr MessageType, ArgumentTypes const &... Arguments)
@@ -189,6 +207,9 @@ template <typename ConnectionType> struct Network
 		mutable bool Die = false;
 		struct OpenInfo { bool Listen; std::string Host; uint16_t Port; };
 		std::queue<OpenInfo> OpenQueue;
+		std::queue<std::function<void(void)>> TransferQueue;
+		struct ScheduleInfo { float Seconds; std::function<void(void)> Callback; };
+		std::queue<ScheduleInfo> ScheduleQueue;
 
 		// Thread implementation
 		template <typename ...MessageTypes> static void Run(Network *This, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
@@ -209,6 +230,7 @@ template <typename ConnectionType> struct Network
 			};
 
 			std::vector<std::unique_ptr<EVData<ev_io>>> IOCallbacks;
+			std::vector<std::unique_ptr<EVData<ev_timer>>> TimerCallbacks;
 
 			// Set up intermediary event handlers and libev loop
 			ev_loop *EVLoop = ev_default_loop(0);
@@ -238,7 +260,7 @@ template <typename ConnectionType> struct Network
 						if (!Socket.IdleWrite())
 							ev_io_stop(EVLoop, WriteWatcher);
 					});
-					ev_io_init(ReadWatcher, EvData<ev_io>::PreCallback, FileDescriptor, EV_WRITE);
+					ev_io_init(WriteWatcher, EvData<ev_io>::PreCallback, FileDescriptor, EV_WRITE);
 					IOCallbacks.push_back(WriteWatcher);
 					Socket.Watcher = WriteWatcher;
 				}
@@ -247,7 +269,7 @@ template <typename ConnectionType> struct Network
 			EVData<ev_async> AsyncOpenData([&](void)
 			{
 				/// Exit loop if dying
-				if (Die) ev_break(EVLoop);
+				if (Die) { ev_break(EVLoop); return; }
 
 				while (true)
 				{
@@ -291,22 +313,70 @@ template <typename ConnectionType> struct Network
 				}
 			});
 			ev_async_init(&AsyncOpenData, EVCallback<ev_async>);
-			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, AsyncOpenData); }
+			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, AsyncOpenData); };
 
-			std::unique_ptr<EVData<ev_timer>> TimerData;
+			EVData<ev_async> AsyncTransferData([&](void)
+			{
+				while (true)
+				{
+					This->Mutex.lock();
+					if (TransferQueue.empty())
+					{
+						This->Mutex.unlock();
+						break;
+					}
+					auto Callback = TransferQueue.front();
+					TransferQueue.pop();
+					This->Mutex.unlock();
+
+					Callback();
+				}
+			});
+			ev_async_init(&AsyncTransferData, EVCallback<ev_async>);
+			This->NotifyTransfer = [&EVLoop, &AsyncTransferData](void) { ev_async_send(EVLoop, AsyncTransferData); };
+
+			EVData<ev_async> AsyncScheduleData([&](void)
+			{
+				while (true)
+				{
+					This->Mutex.lock();
+					if (ScheduleQueue.empty())
+					{
+						This->Mutex.unlock();
+						break;
+					}
+					auto Directive = ScheduleQueue.front();
+					ScheduleQueue.pop();
+					This->Mutex.unlock();
+
+					auto TimerData = new EVData<ev_timer>([TimerData, Directive.Callback, &]
+					{
+						Directive.Callback();
+						TimerCallbacks.erase(TimerData);
+					});
+					ev_timer_init(TimerData, EvCallback<ev_timer>);
+					TimerCallbacks.push_back(TimerData);
+					ev_timer_set(TimerData, Directive.Seconds, 0);
+					ev_timer_start(EVLoop, TimerData);
+				}
+			});
+			ev_async_init(&AsyncScheduleData, EVCallback<ev_async>);
+			This->NotifySchedule = [&EVLoop, &AsyncScheduleData](void) { ev_async_send(EVLoop, AsyncScheduleData); };
+
 			if (TimerPeriod)
 			{
-				TimerData.reset(new EVData<ev_timer>([&]
+				auto TimerData = new EVData<ev_timer>([&]
 				{
 					auto Now = std::chrono::high_resolution_clock::now();
 					for (auto Connection : Connections) Connection->HandleTimer(Now);
 					Directive.Callback();
 					ev_timer_set(TimerData, *TimerPeriod, 0);
 					ev_timer_start(EVLoop, TimerData);
-				}));
-				ev_timer_init(*&TimerData, EvCallback<ev_timer>);
-				ev_timer_set(*&TimerData, *TimerPeriod, 0);
-				ev_timer_start(EVLoop, *&TimerData);
+				});
+				ev_timer_init(TimerData, EvCallback<ev_timer>);
+				TimerCallbacks.push_back(TimerData);
+				ev_timer_set(TimerData, *TimerPeriod, 0);
+				ev_timer_start(EVLoop, TimerData);
 			}
 
 			This->InitSignal.notify_all();

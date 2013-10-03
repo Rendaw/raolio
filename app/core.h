@@ -81,7 +81,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	void Handle(NP1V1Chat, std::string const &Message);
 };
 
-struct Core
+struct Core : CallTransferType
 {
 	Core(void);
 	~Core(void);

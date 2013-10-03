@@ -13,6 +13,15 @@ namespace bfs = boost::filesystem;
 
 typedef std::array<uint8_t, 16> HashType;
 
+struct EngineWrapper
+{
+	EngineWrapper(void);
+	~EngineWrapper(void);
+
+	libvlc_instance_t *VLC;
+	libvlc_media_player_t *VLCMediaPlayer;
+};
+
 struct MediaItem
 {
 	bool Playing;
@@ -32,9 +41,7 @@ struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
-	ClientCore(CallTransferType &CallTransfer, std::string const &Host, uint16_t Port);
-	//ClientCore(bool Listen, std::string const &Host, uint16_t Port);
-	~ClientCore(void);
+	ClientCore(std::string const &Host, uint16_t Port);
 
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(void)> StoppedCallback;
@@ -42,27 +49,30 @@ struct ClientCore
 	std::function<void(size_t Which)> MediaRemovedCallback;
 	std::function<void(void)> MediaAddedCallback;
 
-	std::vector<std::unique_ptr<MediaItem>> const &GetPlaylist(void) const;
-
-	void Command(std::string const &CommandString);
-
 	void Add(HashType const &Hash, bfs::path const &Filename);
-	void Shuffle(void);
-	void Sort(void);
 
 	void SetVolume(float Volume);
-	void Seek(float Time);
 	float GetTime(void);
 
+	void Play(HashType const &MediaID, uint64_t Position);
+	void Play(HashType const &MediaID, float Position);
 	void Play(void);
 	void Stop(void);
-	void PlayStop(void);
-	bool IsPlaying(void);
-	void Next(void);
-	void Previous(void);
-	void Select(size_t Which);
 
 	private:
+		void AddInternal(HashType const &Hash, bfs::path const &Filename);
+
+		void SetVolumeInternal(float Volume);
+		void SeekInternal(float Time);
+		float GetTimeInternal(void);
+
+		void LocalPlayInternal(HashType const &MediaID, uint64_t Position);
+		void PlayInternal(HashType const &MediaID, uint64_t Position, uint64_t SystemTime, uint64_t Now);
+		void PlayInternal(HashType const &MediaID, float Position);
+		void PlayInternal(void);
+		void StopInternal(void);
+		bool IsPlayingInternal(void);
+
 		static void VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData);
 		static void VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData);
 
@@ -70,9 +80,7 @@ struct ClientCore
 
 		Core Parent;
 
-		libvlc_instance_t *VLC;
-		libvlc_media_player_t *VLCMediaPlayer;
-		size_t PlaylistIndex;
+		EngineWrapper Engine;
 		std::vector<std::unique_ptr<MediaItem>> Media;
 		std::map<HashType, MediaItem *> MediaLookup;
 
