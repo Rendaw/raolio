@@ -32,7 +32,7 @@ struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
-	ClientCore(CallTransferType &CallTransfer);
+	ClientCore(CallTransferType &CallTransfer, std::string const &Host, uint16_t Port);
 	//ClientCore(bool Listen, std::string const &Host, uint16_t Port);
 	~ClientCore(void);
 
@@ -54,6 +54,8 @@ struct ClientCore
 	void Seek(float Time);
 	float GetTime(void);
 
+	void Play(void);
+	void Stop(void);
 	void PlayStop(void);
 	bool IsPlaying(void);
 	void Next(void);
@@ -65,6 +67,8 @@ struct ClientCore
 		static void VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData);
 
 		CallTransferType &CallTransfer; // Makes a call in the core's main thread
+
+		Core Parent;
 
 		libvlc_instance_t *VLC;
 		libvlc_media_player_t *VLCMediaPlayer;

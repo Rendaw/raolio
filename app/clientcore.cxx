@@ -13,8 +13,8 @@ MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
 ExtraScopeItem::~ExtraScopeItem(void) {}
 
-//ClientCore::ClientCore(bool Listen, std::string const &Host, uint16_t Port)
-ClientCore::ClientCore(CallTransferType &CallTransfer) : CallTransfer(CallTransfer), PlaylistIndex(0)
+ClientCore::ClientCore(CallTransferType &CallTransfer, std::string const &Host, uint16_t Port) :
+	CallTransfer(CallTransfer), PlaylistIndex(0)
 {
 	VLC = libvlc_new(0, nullptr);
 	if (!VLC) throw SystemError() << "Could not initialize libVLC.";
@@ -22,6 +22,18 @@ ClientCore::ClientCore(CallTransferType &CallTransfer) : CallTransfer(CallTransf
 	if (!VLCMediaPlayer) throw SystemError() << "Could not initialice libVLC media player.";
 	libvlc_event_attach(libvlc_media_player_event_manager(VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
 
+	Parent.ChatCallback = LogCallback;
+	Parent.AddCallback = [this](HashType const &Hash, bfs::path const &Filename)
+		{ CallTransfer([Hash, Filename, this](void) { Add(Hash, Filename); }); };
+	Parent.ClockCallback = [this](uint64_t InstanceID, std::time_point const &SystemTime)
+		{ CallTransfer([InstanceID, SystemTime, this](void) { Latencies.Add(InstanceID, SystemTime); }); };
+	Parent.PlayCallback = [this](HashType const &MediaID, uint64_t MediaTime, std::time_point const &SystemTime)
+	{
+		CallTransfer([MediaID, MediaTime, SystemTime, 
+	};
+	Parent.StopCallback = [this](void)
+		{ CallTransfer([this](void) { Stop(); }); };
+	Parent.Open(false, Host, Port);
 }
 
 ClientCore::~ClientCore(void)
@@ -41,7 +53,7 @@ struct VLCParsedUserData : ExtraScopeItem
 	HashType Hash;
 };
 
-void ClientCore::Add(std::array<uint8_t, 16> const &Hash, bfs::path const &Filename)
+void ClientCore::Add(HashType const &Hash, bfs::path const &Filename)
 {
 	if (MediaLookup.find(Hash) != MediaLookup.end()) return;
 	auto *VLCMedia = libvlc_media_new_path(VLC, Filename.string().c_str());
@@ -105,19 +117,24 @@ void ClientCore::Seek(float Time) { libvlc_media_player_set_position(VLCMediaPla
 
 float ClientCore::GetTime(void) { return libvlc_media_player_get_position(VLCMediaPlayer); }
 
+void ClientCore::Play(void)
+{
+	Media[PlaylistIndex]->Playing = true;
+	libvlc_media_player_play(VLCMediaPlayer);
+	if (MediaUpdatedCallback) MediaUpdatedCallback();
+}
+
+void ClientCore::Stop(void)
+{
+	Media[PlaylistIndex]->Playing = false;
+	libvlc_media_player_pause(VLCMediaPlayer);
+	if (MediaUpdatedCallback) MediaUpdatedCallback();
+}
+
 void ClientCore::PlayStop(void)
 {
-	if (!IsPlaying())
-	{
-		Media[PlaylistIndex]->Playing = true;
-		libvlc_media_player_play(VLCMediaPlayer);
-	}
-	else
-	{
-		Media[PlaylistIndex]->Playing = false;
-		libvlc_media_player_pause(VLCMediaPlayer);
-	}
-	if (MediaUpdatedCallback) MediaUpdatedCallback();
+	if (!IsPlaying()) Play();
+	else Stop();
 }
 
 bool ClientCore::IsPlaying(void) { return libvlc_media_player_is_playing(VLCMediaPlayer); }
