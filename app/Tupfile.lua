@@ -7,7 +7,7 @@ local icmbcMocOutputs = Define.Raw
 
 local SharedObjects = Define.Objects
 {
-	Inputs = Item()
+	Sources = Item()
 		:Include 'shared.cxx'
 		:Include 'core.cxx'
 }

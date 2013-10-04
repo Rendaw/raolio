@@ -176,7 +176,7 @@ Core::Core(void) :
 		[this](std::string const &Host, uint16_t Port, int Socket, ev_loop *EVLoop) // Create connection
 		{
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
-			for (auto Item : Parent.Library)
+			for (auto Item : Library)
 				Out->Announce.emplace(Item->first, Item->second.Size);
 			return Out;
 		},
@@ -193,4 +193,24 @@ Core::~Core(void)
 void Core::Open(bool Listen, std::string const &Host, uint16_t Port)
 {
 	Net.Open(Listen, Host, Port);
+}
+
+void Core::Add(HashType const &MediaID, bfs::path const &Path)
+{
+	try
+	{
+		Library.emplace(MediaID, bfs::file_size(Path), Path);
+
+		for (auto &Connection : Parent.GetConnections())
+		{
+			Connection.Announce.emplace(MediaID, Position, SystemTime);
+			Connection.WakeIdleWrite();
+		}
+	}
+	catch (...) {} // TODO Log/warn?
+}
+
+void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
+{
+	Parent.Broadcast(NP1V1Play, MediaID, Position, SystemTime);
 }

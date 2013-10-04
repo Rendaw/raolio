@@ -1,8 +1,15 @@
 #ifndef shared_h
 #define shared_h
 
+#include "error.h"
+
 #include <string>
 #include <sstream>
+#include <array>
+#include <iomanip>
+#include <chrono>
+
+typedef std::array<uint8_t, 16> HashType;
 
 struct String
 {
@@ -15,6 +22,20 @@ struct String
 	private:
 		std::stringstream Buffer;
 };
+
+template <typename DataType> struct Optional
+{
+	Optional(void) : Valid(false) {}
+	Optional(DataType const &Data) : Valid(true), Data(Data) {}
+	operator bool(void) const { return Valid; }
+	bool operator !(void) const { return !Valid; }
+	DataType &operator *(void) { Assert(Valid); return Data; }
+	DataType *operator ->(void) { Assert(Valid); return &Data; }
+	bool Valid;
+	DataType Data;
+};
+
+uint64_t GetNow(void);
 
 #include <memory>
 

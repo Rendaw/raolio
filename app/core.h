@@ -8,14 +8,14 @@ extern constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
 
 DefineProtocol(NetProto1)
 
-DefineProtocolVersion(NetProto1, NP1V1)
-DefineProtocolMessage(NP1V1, NP1V1Clock, void(uint64_t InstanceID, uint64_t SystemTime))
-DefineProtocolMessage(NP1V1, NP1V1Prepare, void(HashType MediaID, uint64_t Size))
-DefineProtocolMessage(NP1V1, NP1V1Request, void(HashType MediaID, uint64_t From))
-DefineProtocolMessage(NP1V1, NP1V1Data, void(HashType MediaID, uint64_t Chunk, std::vector<uint8_t> Bytes))
-DefineProtocolMessage(NP1V1, NP1V1Play, void(HashType MediaID, uint64_t MediaTime, uint64_t SystemTime))
-DefineProtocolMessage(NP1V1, NP1V1Stop, void(void))
-DefineProtocolMessage(NP1V1, NP1V1Chat, void(std::string Message))
+DefineProtocolVersion(NP1V1, NetProto1)
+DefineProtocolMessage(NP1V1Clock, NP1V1, void(uint64_t InstanceID, uint64_t SystemTime))
+DefineProtocolMessage(NP1V1Prepare, NP1V1, void(HashType MediaID, uint64_t Size))
+DefineProtocolMessage(NP1V1Request, NP1V1, void(HashType MediaID, uint64_t From))
+DefineProtocolMessage(NP1V1Data, NP1V1, void(HashType MediaID, uint64_t Chunk, std::vector<uint8_t> Bytes))
+DefineProtocolMessage(NP1V1Play, NP1V1, void(HashType MediaID, uint64_t MediaTime, uint64_t SystemTime))
+DefineProtocolMessage(NP1V1Stop, NP1V1, void(void))
+DefineProtocolMessage(NP1V1Chat, NP1V1, void(std::string Message))
 
 struct FilePieces
 {
@@ -86,8 +86,14 @@ struct Core : CallTransferType
 	Core(void);
 	~Core(void);
 
+	// Any thread
 	void Open(bool Listen, std::string const &Host, uint16_t Port);
 
+	// Core thread
+	void Add(HashType const &MediaID, bfs::path const &Path);
+	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
+
+	// Callbacks
 	std::function<void(uint64_t InstanceID, std::time_point const &SystemTime)> ClockCallback;
 	std::function<void(HashType const &MediaID, bfs::path const &Path)> AddCallback;
 	std::function<void(HashType const &MediaID, uint64_t MediaTime, std::time_point const &SystemTime)> PlayCallback;

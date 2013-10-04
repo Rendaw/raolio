@@ -2,8 +2,6 @@
 
 #include "error.h"
 
-static uint64_t GetNow(void) { return std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1); }
-
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
@@ -109,9 +107,7 @@ void ClientCore::AddInternal(HashType const &Hash, bfs::path const &Filename)
 	}
 
 	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, VLCMedia};
-	Media.push_back(std::unique_ptr<MediaItem>(Item));
-	MediaLookup[Hash] = &*Media.back();
-	if (MediaAddedCallback) MediaAddedCallback();
+	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
 
 	auto CallbackData = new VLCParsedUserData{*this, Hash};
 	ExtraScope.push_back(std::unique_ptr<ExtraScopeItem>{CallbackData});
@@ -133,7 +129,8 @@ float ClientCore::GetTimeInternal(void) { return libvlc_media_player_get_positio
 
 void ClientCore::LocalPlayInternal(HashType const &MediaID, uint64_t Position)
 {
-	Parent.Play(MediaID, Position, GetNow());
+	auto Start = Latencies.Expected() + GetNow();
+	Parent.Play(MediaID, Position, Start);
 	PlayInternal(MediaID, Position, Start, GetNow());
 }
 
@@ -192,6 +189,6 @@ void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserD
 		Media->second->Artist = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Artist);
 		Media->second->Album = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Album);
 		Media->second->Title = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Title);
-		if (This.MediaUpdateCallback) This.MediaUpdateCallback(Media->second);
+		if (This.UpdateCallback) This.UpdateCallback(Media->second);
 	});
 }

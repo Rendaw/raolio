@@ -2,16 +2,32 @@
 #define clientcore_h
 
 #include "shared.h"
+#include "core.h"
 
 #include <vlc/vlc.h>
-#include <array>
 #include <map>
 #include <vector>
 #include <boost/filesystem.hpp>
 
 namespace bfs = boost::filesystem;
 
-typedef std::array<uint8_t, 16> HashType;
+struct Latency
+{
+	// Cheap implementation
+	void Add(uint64_t Instance, uint64_t Sent)
+	{
+		auto Milliseconds = Sent - GetNow();
+		if (Milliseconds > Max) Max = Milliseconds;
+	}
+
+	uint64_t Expected(void) const
+	{
+		return Max * 2;
+	}
+
+	private:
+		uint64_t Max;
+};
 
 struct EngineWrapper
 {
@@ -44,10 +60,13 @@ struct ClientCore
 	ClientCore(std::string const &Host, uint16_t Port);
 
 	std::function<void(std::string const &Message)> LogCallback;
-	std::function<void(void)> StoppedCallback;
-	std::function<void(void)> MediaUpdatedCallback;
-	std::function<void(size_t Which)> MediaRemovedCallback;
-	std::function<void(void)> MediaAddedCallback;
+	std::function<void(float Time)> SeekCallback;
+	std::function<void(MediaItem *Item)> AddCallback;
+	std::function<void(MediaItem *Item)> UpdateCallback;
+	std::function<void(HashType const &MediaID)> SelectCallback;
+	std::function<void(void)> PlayCallback;
+	std::function<void(void)> StopCallback;
+	std::function<void(void)> EndCallback;
 
 	void Add(HashType const &Hash, bfs::path const &Filename);
 
@@ -81,7 +100,6 @@ struct ClientCore
 		Core Parent;
 
 		EngineWrapper Engine;
-		std::vector<std::unique_ptr<MediaItem>> Media;
 		std::map<HashType, MediaItem *> MediaLookup;
 
 		std::vector<std::unique_ptr<ExtraScopeItem>> ExtraScope;
