@@ -120,7 +120,7 @@ struct ServerHistoryQTModel_Unique : QAbstractTableModel
 	}
 } ServerHistoryQTModel;
 
-void OpenPlayer(void);
+void OpenPlayer(std::string const &Host, uint16_t Port);
 void OpenServerSelect(void)
 {
 	auto ConnectWindow = new QWidget();
@@ -287,12 +287,12 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 			case Qt::DisplayRole:
 				switch (Index.column())
 				{
-					case 0: return QString::fromUtf8(FormatHash(Playlist[Index.row()].ID).c_str());
+					case 0: return QString::fromUtf8(FormatHash(Playlist[Index.row()].Hash).c_str());
 					case 1:
-						switch (Playlist[Index.row()].Statem)
+						switch (Playlist[Index.row()].State)
 						{
-							PlaylistInfo::Pause: return QString("=");
-							PlaylistInfo::Play: return QString(">");
+							case PlaylistInfo::Pause: return QString("=");
+							case PlaylistInfo::Play: return QString(">");
 							default: return QVariant();
 						}
 					case 2: return QString::fromUtf8(Playlist[Index.row()].Artist.c_str());
@@ -305,19 +305,19 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 		}
 	}
 
-	Optional<size_t> Find(HashType const &ID)
+	Optional<size_t> Find(HashType const &Hash)
 	{
-		for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].ID == ID) return Index;
+		for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
 		return {};
 	}
 
-	void AddUpdate(Core::MediaItem *Item)
+	void AddUpdate(MediaItem *Item)
 	{
-		auto Found = Find(Item->ID);
+		auto Found = Find(Item->Hash);
 		if (!Found)
 		{
-			beginInsertRows(QModelIndex(), Core.GetPlaylist().size() - 1, Core.GetPlaylist().size() - 1);
-			Playlist.emplace_back(Item->ID, PlaylistInfo::Deselected, Item->Title, Item->Album, Item->Artist);
+			beginInsertRows(QModelIndex(), Playlist.size() - 1, Playlist.size() - 1);
+			Playlist.emplace_back(Item->Hash, PlaylistInfo::Deselected, Item->Title, Item->Album, Item->Artist);
 			endInsertRows();
 			return;
 		}
@@ -330,39 +330,46 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 		}
 	}
 
-	void Remove(HashType const &ID)
+	void Remove(HashType const &Hash)
 	{
-		auto Found = Find(Item->ID);
+		auto Found = Find(Hash);
 		if (!Found) return;
 		beginRemoveRows(QModelIndex(), *Found, *Found);
 		Playlist.erase(Playlist.begin() + *Found);
 		endRemoveRows();
 	}
 
-	void Select(HashType const &ID)
+	void Select(HashType const &Hash)
 	{
-		auto Found = Find(Item->ID);
+		auto Found = Find(Hash);
 		if (!Found) return;
 		if (Index < Playlist.size())
 		{
-			Playlist[Index]->State = PlaylistInfo::Deselected;
+			Playlist[Index].State = PlaylistInfo::Deselected;
 			dataChanged(createIndex(Index, 1), createIndex(Index, 1));
 		}
 		Index = *Found;
-		Playlist[Index]->State = PlaylistInfo::Pause;
+		Playlist[Index].State = PlaylistInfo::Pause;
 		dataChanged(createIndex(Index, 1), createIndex(Index, 1));
 	}
 
-	void IsPlaying(void)
+	bool IsPlaying(void)
 	{
 		if (Index >= Playlist.size()) return false;
-		return Playlist[Index]->State == PlaylistInfo::Play;
+		return Playlist[Index].State == PlaylistInfo::Play;
+	}
+
+	HashType GetID(int Row) const
+	{
+		assert(Row >= 0);
+		assert(Row < Playlist.size());
+		return Playlist[Row].Hash;
 	}
 
 	Optional<HashType> GetCurrentID(void) const
 	{
 		if (Index >= Playlist.size()) return {};
-		else return Playlist[Index].ID;
+		else return Playlist[Index].Hash;
 	}
 
 	Optional<HashType> GetNextID(void) const
@@ -370,13 +377,13 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 		if (Index >= Playlist.size())
 		{
 			if (Playlist.empty()) return {};
-			else return Playlist.front().ID;
+			else return Playlist.front().Hash;
 		}
 		else
 		{
 			if (Index + 1 >= Playlist.size())
-				return Playlist.front().ID;
-			return Playlist[Index + 1].ID;
+				return Playlist.front().Hash;
+			return Playlist[Index + 1].Hash;
 		}
 	}
 
@@ -385,44 +392,49 @@ struct PlaylistQTModel_Unique : QAbstractTableModel
 		if (Index >= Playlist.size())
 		{
 			if (Playlist.empty()) return {};
-			else return Playlist.back().ID;
+			else return Playlist.back().Hash;
 		}
 		else
 		{
 			if (Index == 0)
-				return Playlist.back().ID;
-			return Playlist[Index - 1].ID;
+				return Playlist.back().Hash;
+			return Playlist[Index - 1].Hash;
 		}
 	}
 
 	void Play(void)
 	{
 		if (Index >= Playlist.size()) return;
-		return Playlist[Index]->State = PlaylistInfo::Play;
+		Playlist[Index].State = PlaylistInfo::Play;
 		dataChanged(createIndex(Index, 1), createIndex(Index, 1));
 	}
 
 	void Stop(void)
 	{
 		if (Index >= Playlist.size()) return;
-		return Playlist[Index]->State = PlaylistInfo::Play;
+		Playlist[Index].State = PlaylistInfo::Play;
 		dataChanged(createIndex(Index, 1), createIndex(Index, 1));
 	}
 
 	void Shuffle(void)
 	{
+		HashType CurrentID;
+		if (Index >= Playlist.size()) CurrentID = Playlist[Index].Hash;
 		std::random_shuffle(Playlist.begin(), Playlist.end());
 		dataChanged(createIndex(0, 0), createIndex(Playlist.size(), columnCount()));
+		auto Found = Find(CurrentID);
+		if (Found) Index = *Found;
 	}
 
 	private:
 		struct PlaylistInfo
 		{
-			HashType ID;
+			HashType Hash;
 			enum { Deselected, Pause, Play } State;
 			std::string Title;
 			std::string Album;
 			std::string Artist;
+			PlaylistInfo(HashType const &Hash, decltype(State) const &State, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Title{Title}, Album{Album}, Artist{Artist} {}
 		};
 		std::vector<PlaylistInfo> Playlist;
 		size_t Index;
@@ -490,38 +502,51 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 		{
 			PlayerDataType(std::string const &Host, uint16_t Port) : Core(Host, Port) {}
 			ClientCore Core;
-			PlaylistQTModel_Unique PlaylistQTModel{Core};
+			PlaylistQTModel_Unique PlaylistQTModel;
+			struct
+			{
+				void Request(void) { Count = 0u; }
+				void Ack(void) { Count = std::min(2u, Count + 1u); }
+				bool InControl(void) { return Count == 1u; }
+				void Maintain(void) { if (InControl()) Request(); }
+				unsigned int Count = 2u;
+			} Volition;
 		};
 		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Host, Port));
 		auto Core = &PlayerData->Data->Core;
 		auto PlaylistQTModel = &PlayerData->Data->PlaylistQTModel;
+		auto Volition = &PlayerData->Data->Volition;
 
 		Playlist->setModel(PlaylistQTModel);
 
-		Core->LogCallback = [CrossThread, ChatDisplay, ChatCursor](std::string const &Message)
+		Core->LogCallback = [=](std::string const &Message)
 		{
-			CrossThread->Call([ChatDisplay, ChatCursor, Message](void)
+			CrossThread->Transfer([ChatDisplay, ChatCursor, Message](void)
 			{
 				ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str()));
 				ChatDisplay->setTextCursor(*ChatCursor);
 			});
 		};
-		Core->SeekCallback = [](float Time) { CrossThread->Call([Position, Time](void) { if (!Position->isSliderDown()) Position->setValue(Time * 10000); }); };
-		Core->AddCallback = [](MediaItem *Item) { CrossThread->Call([](void) { PlaylistQTModel->AddUpdate(Item); }); };
-		Core->UpdateCallback = [](MediaItem *Item) { CrossThread->Call([](void) { PlaylistQTModel->AddUpdate(Item); }); };
-		Core->SelectCallback = [](HashType const &MediaID) { CrossThread->Call([](void) { PlaylistQTModel->Select(MediaID); }); };
-		Core->PlayCallback = [](void) { CrossThread->Call([](void) { PlaylistQTModel->Play(); }); };
-		Core->StopCallback = [](void) { CrossThread->Call([](void) { PlaylistQTModel->Stop(); }); };
-		Core->EndCallback = [](void)
+		Core->SeekCallback = [=](float Time) { CrossThread->Transfer([=](void) { if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Time * 10000)); }); };
+		Core->AddCallback = [=](MediaItem *Item) { CrossThread->Transfer([=](void) { PlaylistQTModel->AddUpdate(Item); }); };
+		Core->UpdateCallback = [=](MediaItem *Item) { CrossThread->Transfer([=](void) { PlaylistQTModel->AddUpdate(Item); }); };
+		Core->SelectCallback = [=](HashType const &MediaID)
+			{ CrossThread->Transfer([=](void) { Volition->Ack(); PlaylistQTModel->Select(MediaID); }); };
+		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void) { PlaylistQTModel->Play(); }); };
+		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void) { PlaylistQTModel->Stop(); }); };
+		Core->EndCallback = [=](void)
 		{
-			CrossThread->Call([](void)
+			CrossThread->Transfer([=](void)
 			{
-				if (Volition != Requested) return;
-				Core->Play(PlaylistQTModel->GetNextID(), 0);
+				if (!Volition->InControl()) return;
+				auto NextID = PlaylistQTModel->GetNextID();
+				if (!NextID) return;
+				Volition->Request();
+				Core->Play(*NextID, 0ul);
 			});
 		};
 
-		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [Core, ChatDisplay, ChatCursor, ChatEntry](void)
+		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [=](void)
 		{
 			//Core->Command(ChatEntry->text().toUtf8().data());
 			ChatCursor->insertText(ChatEntry->text() + "\n");
@@ -529,27 +554,32 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 			ChatDisplay->setTextCursor(*ChatCursor);
 		});
 
-		QObject::connect(Playlist, &QAbstractItemView::doubleClicked, [Core](QModelIndex const &Index)
-			{ Core->Play(Index.row(), 0); });
+		QObject::connect(Playlist, &QAbstractItemView::doubleClicked, [=](QModelIndex const &Index)
+			{ Volition->Request(); Core->Play(PlaylistQTModel->GetID(Index.row()), 0ul); });
 
 		auto PositionUpdateTimer = new QTimer(Position);
-		QObject::connect(PositionUpdateTimer, &QTimer::timeout, [Core, Position](void)
+		QObject::connect(PositionUpdateTimer, &QTimer::timeout, [=](void)
 			{ Core->GetTime(); });
 		PositionUpdateTimer->start(1000);
 
-		QObject::connect(Position, &QSlider::sliderReleased, [Core, Position](void)
-			{ Core->Play(PlaylistQTModel->GetCurrentID(), (float)Position->value() / 10000.0f); });
+		QObject::connect(Position, &QSlider::sliderReleased, [=](void)
+		{
+			auto CurrentID = PlaylistQTModel->GetCurrentID();
+			if (!CurrentID) return;
+			Volition->Maintain();
+			Core->Play(*CurrentID, (float)Position->value() / 10000.0f);
+		});
 
-		QObject::connect(Volume, &QSlider::sliderReleased, [Core, Volume](void)
+		QObject::connect(Volume, &QSlider::sliderReleased, [=](void)
 			{ Core->SetVolume(Volume->value() / 10000.0f); });
 
-		QObject::connect(Add, &QAction::triggered, [Core, PlaylistQTModel, MainWindow](bool)
+		QObject::connect(Add, &QAction::triggered, [=](bool)
 		{
 			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
 				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
 				"All files (*.*)");
 			Dialog->setFileMode(QFileDialog::ExistingFiles);
-			QObject::connect(Dialog, &QFileDialog::filesSelected, [Core, PlaylistQTModel](const QStringList &Selected)
+			QObject::connect(Dialog, &QFileDialog::filesSelected, [=](const QStringList &Selected)
 			{
 				for (auto File : Selected)
 				{
@@ -566,13 +596,18 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 			Dialog->show();
 		});
 
-		QObject::connect(Shuffle, &QAction::triggered, [Core, PlaylistQTModel](bool)
+		QObject::connect(Shuffle, &QAction::triggered, [=](bool)
 			{ PlaylistQTModel->Shuffle(); });
 
-		QObject::connect(Previous, &QAction::triggered, [Core, PlaylistQTModel](bool)
-			{ Core->Play(PlaylistQTModel->GetPreviousID(), 0); });
+		QObject::connect(Previous, &QAction::triggered, [=](bool)
+		{
+			auto PreviousID = PlaylistQTModel->GetPreviousID();
+			if (!PreviousID) return;
+			Volition->Request();
+			Core->Play(*PreviousID, 0ul);
+		});
 
-		QObject::connect(PlayStop, &QAction::triggered, [Core, PlaylistQTModel, PlayStop](bool)
+		QObject::connect(PlayStop, &QAction::triggered, [=](bool)
 		{
 			if (PlaylistQTModel->IsPlaying())
 			{
@@ -586,8 +621,13 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 			}
 		});
 
-		QObject::connect(Next, &QAction::triggered, [Core, PlaylistQTModel](bool)
-			{ Core->Play(PlaylistQTModel->GetNextID(), 0); });
+		QObject::connect(Next, &QAction::triggered, [=](bool)
+		{
+			auto NextID = PlaylistQTModel->GetNextID();
+			if (!NextID) return;
+			Volition->Request();
+			Core->Play(*NextID, 0ul);
+		});
 
 		MainWindow->show();
 	}

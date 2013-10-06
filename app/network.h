@@ -16,27 +16,27 @@
 
 template <typename ConnectionType> struct Network
 {
-	typedef std::function<ConnectionType *(Network<ConnectionType> &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop)> CreateConnectionCallback;
+	typedef std::function<ConnectionType *(std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop)> CreateConnectionCallback;
 
 	struct Connection
 	{
 		Connection(std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop, ConnectionType *DerivedThis) :
 			Host{Host}, Port{Port}, Socket{Socket}, ReadBuffer{this->Socket}, WriteWatcher{DerivedThis, EVLoop}
 		{
-			if (Socket < 0)
+			if (this->Socket < 0)
 			{
-				Socket = socket(AF_INET, SOCK_STREAM, 0);
-				if (Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
+				this->Socket = socket(AF_INET, SOCK_STREAM, 0);
+				if (this->Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
 				sockaddr_in AddressInfo{};
 				AddressInfo.sin_family = AF_INET;
 				AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
 				AddressInfo.sin_port = htons(Port);
 
-				if (connect(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
+				if (connect(this->Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
 					throw SystemError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
 			}
 
-			WriteWatcher.Initialize();
+			WriteWatcher.Initialize(this->Socket);
 		}
 
 		~Connection(void) { assert(Socket >= 0); close(Socket); }
@@ -57,7 +57,7 @@ template <typename ConnectionType> struct Network
 		}
 
 		private:
-			friend struct Manager;
+			friend struct Network<ConnectionType>;
 			std::string Host;
 			uint16_t Port;
 			int Socket;
@@ -133,24 +133,21 @@ template <typename ConnectionType> struct Network
 
 		~Listener(void) { assert(Socket >= 0); close(Socket); }
 
-		private:
-			friend struct Manager;
+		std::unique_ptr<ConnectionType> Accept(CreateConnectionCallback const &CreateConnection, struct ev_loop *EVLoop)
+		{
+			sockaddr_in AddressInfo{};
+			int AddressInfoLength = sizeof(AddressInfo);
+			int ConnectionSocket = accept(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), &AddressInfoLength);
+			if (ConnectionSocket == -1) return nullptr; // Log?
+			return CreateConnection(inet_ntoa(AddressInfo.sin_addr), AddressInfo.sin_port, ConnectionSocket, EVLoop);
+		}
 
-			std::unique_ptr<ConnectionType> Accept(CreateConnectionCallback const &CreateConnection, struct ev_loop *EVLoop)
-			{
-				sockaddr_in AddressInfo{};
-				int AddressInfoLength = sizeof(AddressInfo);
-				int ConnectionSocket = accept(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), &AddressInfoLength);
-				if (ConnectionSocket == -1) return nullptr; // Log?
-				return CreateConnection(inet_ntoa(AddressInfo.sin_addr), AddressInfo.sin_port, ConnectionSocket, EVLoop);
-			}
-
-			std::string Host;
-			uint16_t Port;
-			int Socket;
+		std::string Host;
+		uint16_t Port;
+		int Socket;
 	};
 
-	template <typename ...MessageTypes> Network(CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
+	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
 	{
 		std::unique_lock<std::mutex> Lock(Mutex);
 		Thread = std::thread{Network::Run<MessageTypes...>, this, CreateConnection, TimerPeriod};
@@ -180,7 +177,7 @@ template <typename ConnectionType> struct Network
 			std::lock_guard<std::mutex> Lock(Mutex);
 			TransferQueue.emplace(Call);
 		}
-		NotifyCall();
+		NotifyTransfer();
 	}
 
 	void Schedule(float Seconds, std::function<void(void)> const &Call)
@@ -193,7 +190,7 @@ template <typename ConnectionType> struct Network
 	}
 
 	// Network thread only
-	std::vector<std::unique_ptr<Connection>> GetConnections(void) { return Connections; }
+	std::vector<std::unique_ptr<ConnectionType>> GetConnections(void) { return Connections; }
 
 	template <typename MessageType, typename... ArgumentTypes> void Broadcast(MessageType, ArgumentTypes const &... Arguments)
 	{
@@ -216,7 +213,7 @@ template <typename ConnectionType> struct Network
 		std::condition_variable InitSignal;
 		std::thread Thread;
 		std::function<void(void)> NotifyOpen;
-		std::function<void(void)> NotifyCall;
+		std::function<void(void)> NotifyTransfer;
 		std::function<void(void)> NotifySchedule;
 
 		// Interface between other and event thread
@@ -228,7 +225,7 @@ template <typename ConnectionType> struct Network
 		std::queue<ScheduleInfo> ScheduleQueue;
 
 		// Net-thread only
-		std::vector<std::unique_ptr<Connection>> Connections;
+		std::vector<std::unique_ptr<ConnectionType>> Connections;
 
 		// Used only in thread run
 		template <typename DataType> struct EVData : DataType
@@ -259,7 +256,7 @@ template <typename ConnectionType> struct Network
 
 			std::vector<std::unique_ptr<Listener>> Listeners;
 
-			auto const CreateConnectionWatcher = [&](Connection &Socket)
+			auto const CreateConnectionWatcher = [&](ConnectionType &Socket)
 			{
 				{
 					auto ReadWatcher = new EVData<ev_io>{[&](void)
@@ -267,28 +264,16 @@ template <typename ConnectionType> struct Network
 						Reader.Read(Socket.ReadBuffer, Socket);
 						// Ignore errors?
 					}};
-					IOCallbacks.push_back(ReadWatcher);
+					IOCallbacks.emplace_back(ReadWatcher);
 					ev_io_init(ReadWatcher, EVData<ev_io>::PreCallback, Socket.Socket, EV_READ);
 					ev_io_start(EVLoop, ReadWatcher);
-				}
-
-				ev_io_start(EVLoop, &Socket.WriteWatcher);
-				{
-					EVData<ev_io> *WriteWatcher = new EVData<ev_io>([&](void)
-					{
-						if (!Socket.IdleWrite())
-							ev_io_stop(EVLoop, WriteWatcher);
-					});
-					ev_io_init(WriteWatcher, EVData<ev_io>::PreCallback, Socket.Socket, EV_WRITE);
-					IOCallbacks.push_back(WriteWatcher);
-					Socket.Watcher = WriteWatcher;
 				}
 			};
 
 			EVData<ev_async> AsyncOpenData([&](void)
 			{
 				/// Exit loop if dying
-				if (This.Die) { ev_break(EVLoop); return; }
+				if (This->Die) { ev_break(EVLoop); return; }
 
 				while (true)
 				{
@@ -307,7 +292,7 @@ template <typename ConnectionType> struct Network
 						Listener *Socket = nullptr;
 						try { auto Socket = new Listener{Directive.Host, Directive.Port}; }
 						catch (...) { continue; } // TODO Log or warn?
-						Listeners.push_back(Socket);
+						Listeners.emplace_back(Socket);
 
 						auto ListenerData = new EVData<ev_io>([&, Socket]
 						{
@@ -317,22 +302,22 @@ template <typename ConnectionType> struct Network
 							This->Connections.push_back(ConnectionInfo);
 							CreateConnectionWatcher(*ConnectionInfo);
 						});
-						IOCallbacks.push_back(ListenerData);
+						IOCallbacks.emplace_back(ListenerData);
 						ev_io_init(ListenerData, EVData<ev_io>::PreCallback, Socket->Socket, EV_READ);
 						ev_io_start(EVLoop, ListenerData);
 					}
 					else
 					{
-						Connection *Socket = nullptr;
+						ConnectionType *Socket = nullptr;
 						try { auto Socket = CreateConnection(Directive.Host, Directive.Port, -1, EVLoop); }
 						catch (...) { continue; } // TODO Log or warn?
-						This.Connections.push_back(Socket);
+						This->Connections.emplace_back(Socket);
 						CreateConnectionWatcher(*Socket);
 					}
 				}
 			});
 			ev_async_init(&AsyncOpenData, EVData<ev_async>::PreCallback);
-			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, AsyncOpenData); };
+			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, &AsyncOpenData); };
 
 			EVData<ev_async> AsyncTransferData([&](void)
 			{
@@ -352,7 +337,7 @@ template <typename ConnectionType> struct Network
 				}
 			});
 			ev_async_init(&AsyncTransferData, EVData<ev_async>::PreCallback);
-			This->NotifyTransfer = [&](void) { ev_async_send(EVLoop, AsyncTransferData); };
+			This->NotifyTransfer = [&](void) { ev_async_send(EVLoop, &AsyncTransferData); };
 
 			EVData<ev_async> AsyncScheduleData([&](void)
 			{
@@ -371,27 +356,35 @@ template <typename ConnectionType> struct Network
 					EVData<ev_timer> *TimerData = new EVData<ev_timer>([&, TimerData, Directive]
 					{
 						Directive.Callback();
-						TimerCallbacks.erase(TimerData);
+						for (auto Callback = TimerCallbacks.begin(); ; Callback++)
+						{
+							assert(Callback != TimerCallbacks.end());
+							if (Callback->get() == TimerData)
+							{
+								TimerCallbacks.erase(Callback);
+								break;
+							}
+						}
 					});
 					ev_timer_init(TimerData, EVData<ev_timer>::PreCallback, Directive.Seconds, 0);
-					TimerCallbacks.push_back(TimerData);
+					TimerCallbacks.emplace_back(TimerData);
 					ev_timer_start(EVLoop, TimerData);
 				}
 			});
 			ev_async_init(&AsyncScheduleData, EVData<ev_async>::PreCallback);
-			This->NotifySchedule = [&](void) { ev_async_send(EVLoop, AsyncScheduleData); };
+			This->NotifySchedule = [&](void) { ev_async_send(EVLoop, &AsyncScheduleData); };
 
 			if (TimerPeriod)
 			{
-				auto TimerData = new EVData<ev_timer>([&]
+				EVData<ev_timer> *TimerData = new EVData<ev_timer>([&, TimerData]
 				{
-					auto Now = std::chrono::high_resolution_clock::now();
-					for (auto Connection : This.Connections) Connection->HandleTimer(Now);
+					auto Now = GetNow();
+					for (auto &Connection : This->Connections) Connection->HandleTimer(Now);
 					ev_timer_set(TimerData, *TimerPeriod, 0);
 					ev_timer_start(EVLoop, TimerData);
 				});
 				ev_timer_init(TimerData, EVData<ev_timer>::PreCallback, *TimerPeriod, 0);
-				TimerCallbacks.push_back(TimerData);
+				TimerCallbacks.emplace_back(TimerData);
 				ev_timer_start(EVLoop, TimerData);
 			}
 

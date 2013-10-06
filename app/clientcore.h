@@ -11,7 +11,7 @@
 
 namespace bfs = boost::filesystem;
 
-struct Latency
+struct LatencyTracker
 {
 	// Cheap implementation
 	void Add(uint64_t Instance, uint64_t Sent)
@@ -40,7 +40,6 @@ struct EngineWrapper
 
 struct MediaItem
 {
-	bool Playing;
 	HashType Hash;
 	bfs::path Filename;
 	std::string Artist;
@@ -71,7 +70,7 @@ struct ClientCore
 	void Add(HashType const &Hash, bfs::path const &Filename);
 
 	void SetVolume(float Volume);
-	float GetTime(void);
+	void GetTime(void);
 
 	void Play(HashType const &MediaID, uint64_t Position);
 	void Play(HashType const &MediaID, float Position);
@@ -100,9 +99,12 @@ struct ClientCore
 		Core Parent;
 
 		EngineWrapper Engine;
-		std::map<HashType, MediaItem *> MediaLookup;
+		std::map<HashType, std::unique_ptr<MediaItem>> MediaLookup;
+		MediaItem *Playing;
 
 		std::vector<std::unique_ptr<ExtraScopeItem>> ExtraScope;
+
+		LatencyTracker Latencies;
 };
 
 #endif

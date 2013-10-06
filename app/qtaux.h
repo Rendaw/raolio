@@ -8,7 +8,7 @@
 #include <functional>
 #include <memory>
 
-Q_DECLARE_METATYPE(std::function<void(void)>);
+Q_DECLARE_METATYPE(std::function<void(void)>)
 struct QTCrossThread : QObject, CallTransferType
 {
 	QTCrossThread(QObject *Parent) : QObject(Parent)
@@ -20,8 +20,7 @@ struct QTCrossThread : QObject, CallTransferType
 		static RegisterTypes Registration{};
 		QObject::connect(this, &QTCrossThread::Send, this, &QTCrossThread::Receive);
 	}
-	inline void Call(std::function<void(void)> const &Function) { Send(Function); }
-	inline void operator()(std::function<void(void)> const &Call) override { Send(Call); }
+	inline void Transfer(std::function<void(void)> const &Call) override { Send(Call); }
 	private slots:
 		void Receive(std::function<void(void)> Function) { Function(); }
 	signals:

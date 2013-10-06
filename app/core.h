@@ -2,7 +2,13 @@
 #define core_h
 
 #include "protocol.h"
+#include "protocoloperations.h"
 #include "network.h"
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
+#include <map>
+
+namespace bfs = boost::filesystem;
 
 extern constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
 
@@ -19,6 +25,7 @@ DefineProtocolMessage(NP1V1Chat, NP1V1, void(std::string Message))
 
 struct FilePieces
 {
+	FilePieces(void);
 	FilePieces(uint64_t Size);
 
 	bool Finished(void) const;
@@ -48,9 +55,9 @@ struct CoreConnection : Network<CoreConnection>::Connection
 		HashType ID;
 		uint64_t Size;
 		FilePieces Pieces;
-		std::time_point LastResponse;
+		uint64_t LastResponse; // Time, ms since epoch
 		bfs::path Path;
-		std::fstream File;
+		bfs::fstream File;
 	} Request;
 	std::vector<MediaInfo> PendingRequests;
 	struct FinishedMedia
@@ -63,15 +70,15 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	struct
 	{
 		HashType ID;
-		std::fstream File;
+		bfs::fstream File;
 		uint64_t Chunk;
-	} DataStatus;
+	} Response;
 
-	CoreConnection(Core &Parent, std::string cosnt &Host, uint16_t Port, int Socket, ev_loop *EVLoop);
+	CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop);
 
-	bool IdleWrite(CoreConnection &Info);
+	bool IdleWrite(void);
 
-	void HandleTimer(std::time_point const &Now);
+	void HandleTimer(uint64_t const &Now);
 	void Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t const &SystemTime);
 	void Handle(NP1V1Prepare, HashType const &MediaID, uint64_t const &Size);
 	void Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From);
@@ -88,19 +95,22 @@ struct Core : CallTransferType
 
 	// Any thread
 	void Open(bool Listen, std::string const &Host, uint16_t Port);
+	void Transfer(std::function<void(void)> const &Call) override;
+	void Schedule(float Seconds, std::function<void(void)> const &Call);
 
 	// Core thread
 	void Add(HashType const &MediaID, bfs::path const &Path);
 	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
 
 	// Callbacks
-	std::function<void(uint64_t InstanceID, std::time_point const &SystemTime)> ClockCallback;
+	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;
 	std::function<void(HashType const &MediaID, bfs::path const &Path)> AddCallback;
-	std::function<void(HashType const &MediaID, uint64_t MediaTime, std::time_point const &SystemTime)> PlayCallback;
+	std::function<void(HashType const &MediaID, uint64_t MediaTime, uint64_t const &SystemTime)> PlayCallback;
 	std::function<void(void)> StopCallback;
 	std::function<void(std::string const &Message)> ChatCallback;
 
 	private:
+		friend struct CoreConnection;
 		bfs::path const TempPath;
 		uint64_t const ID;
 

@@ -39,148 +39,14 @@ typedef StrictType(uint16_t) ArraySizeType;
 typedef std::vector<uint8_t> BufferType;
 }
 
-template <typename IntType, typename std::enable_if<std::is_integral<IntType>::value>::type * = nullptr>
-	constexpr size_t ProtocolGetSize(IntType const &Argument)
-	{ return sizeof(IntType); }
+template <typename Type, typename Enable = void> struct ProtocolOperations;
 
-template <typename IntType, typename std::enable_if<std::is_integral<IntType>::value>::type * = nullptr>
-	inline void ProtocolWrite(uint8_t *&Out, IntType const &Argument)
-	{ *reinterpret_cast<IntType *>(Out) = Argument; Out += sizeof(Argument); }
-
-template <size_t ExplicitCastableUniqueness, typename ExplicitCastableType> size_t ProtocolGetSize(ExplicitCastable<ExplicitCastableUniqueness, ExplicitCastableType> const &Argument)
-	{ return ProtocolGetSize(*Argument); }
-
-template <size_t ExplicitCastableUniqueness, typename ExplicitCastableType> void ProtocolWrite(uint8_t *&Out, ExplicitCastable<ExplicitCastableUniqueness, ExplicitCastableType> const &Argument)
-	{ ProtocolWrite(Out, *Argument); }
-
-inline size_t ProtocolGetSize(std::string const &Argument)
-{
-	assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-	return {Protocol::SizeType::Type(Protocol::ArraySizeType::Size + Argument.size())};
-}
-inline void ProtocolWrite(uint8_t *&Out, std::string const &Argument)
-{
-	Protocol::ArraySizeType const StringSize = (Protocol::ArraySizeType::Type)Argument.size();
-	ProtocolWrite(Out, *StringSize);
-	memcpy(Out, Argument.c_str(), Argument.size());
-	Out += Argument.size();
-}
-
-template <typename ElementType, typename std::enable_if<!std::is_class<ElementType>::value>::type* = nullptr>
-	inline size_t ProtocolGetSize(std::vector<ElementType> const &Argument)
-{
-	assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-	return Protocol::ArraySizeType::Size + (Protocol::ArraySizeType::Type)Argument.size() * sizeof(ElementType);
-}
-
-template <typename ElementType, typename std::enable_if<!std::is_class<ElementType>::value>::type* = nullptr>
-	inline void ProtocolWrite(uint8_t *&Out, std::vector<ElementType> const &Argument)
-{
-	Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
-	ProtocolWrite(Out, *ArraySize);
-	memcpy(Out, &Argument[0], Argument.size() * sizeof(ElementType));
-	Out += Argument.size() * sizeof(ElementType);
-}
-
-template <typename ElementType, typename std::enable_if<std::is_class<ElementType>::value>::type* = nullptr>
-	static inline size_t ProtocolGetSize(std::vector<ElementType> const &Argument)
-{
-	assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-	Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
-	size_t Out = Protocol::ArraySizeType::Size;
-	for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < ArraySize; ++ElementIndex)
-		Out += ProtocolGetSize(Argument[*ElementIndex]);
-	return Out;
-}
-template <typename ElementType, typename std::enable_if<std::is_class<ElementType>::value>::type* = nullptr>
-	static inline void ProtocolWrite(uint8_t *&Out, std::vector<ElementType> const &Argument)
-{
-	Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
-	ProtocolWrite(Out, *ArraySize);
-	for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < ArraySize; ++ElementIndex)
-		ProtocolWrite(Out, Argument[*ElementIndex]);
-}
-
-template <typename LogType, typename IntType> bool ProtocolRead(LogType &Log, Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, IntType &Data)
-{
-	if (Buffer.size() < StrictCast(Offset, size_t) + sizeof(IntType))
-	{
-		Log.Debug() << "End of file reached prematurely reading message body integer size " << sizeof(IntType) << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-
-	Data = *reinterpret_cast<IntType const *>(&Buffer[*Offset]);
-	Offset += static_cast<Protocol::SizeType::Type>(sizeof(IntType));
-	return true;
-}
-
-template <typename LogType> bool ProtocolRead(LogType &Log, Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::string &Data)
-{
-	if (Buffer.size() < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size)
-	{
-		Log.Debug() << "End of file reached prematurely reading message body string header size " << Protocol::SizeType::Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-	Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
-	if (Buffer.size() < StrictCast(Offset, size_t) + (size_t)Size)
-	{
-		Log.Debug() << "End of file reached prematurely reading message body string body size " << Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Data = std::string(reinterpret_cast<char const *>(&Buffer[*Offset]), Size);
-	Offset += Size;
-	return true;
-}
-
-template <typename LogType, typename ElementType, typename std::enable_if<!std::is_class<ElementType>::value>::type* = nullptr>
-	bool ProtocolRead(LogType &Log, Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::vector<ElementType> &Data)
-{
-	if (Buffer.size() < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size)
-	{
-		Log.Debug() << "End of file reached prematurely reading message body array header size " << Protocol::ArraySizeType::Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-	Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
-	if (Buffer.size() < StrictCast(Offset, size_t) + Size * sizeof(ElementType))
-	{
-		Log.Debug() << "End of file reached prematurely reading message body array body size " << Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Data.resize(Size);
-	memcpy(&Data[0], &Buffer[*Offset], Size * sizeof(ElementType));
-	Offset += static_cast<Protocol::SizeType::Type>(Size * sizeof(ElementType));
-	return true;
-}
-
-template <typename LogType, typename ElementType, typename std::enable_if<std::is_class<ElementType>::value>::type* = nullptr>
-	bool ProtocolRead(LogType &Log, Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::vector<ElementType> &Data)
-{
-	if (Buffer.size() < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size)
-	{
-		Log.Debug() << "End of file reached prematurely reading message body array header size " << Protocol::ArraySizeType::Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-	Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
-	if (Buffer.size() < StrictCast(Offset, size_t) + (size_t)Size)
-	{
-		Log.Debug() << "End of file reached prematurely reading message body array body size " << Size << ", message length doesn't match contents (version " << *VersionID << ", type " << *MessageID << ")";
-		assert(false);
-		return false;
-	}
-	Data.resize(Size);
-	for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < Size; ++ElementIndex)
-		ProtocolRead(Log, VersionID, MessageID, Buffer, Offset, Data[*ElementIndex]);
-	return true;
-}
+template <typename Type> constexpr size_t ProtocolGetSize(Type const &Argument)
+	{ return ProtocolOperations<Type>::GetSize(Argument); }
+template <typename Type> inline void ProtocolWrite(uint8_t *&Out, Type const &Argument)
+	{ return ProtocolOperations<Type>::Write(Out, Argument); }
+template <typename Type> bool ProtocolRead(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, Type &Data)
+	{ return ProtocolOperations<Type>::Read(VersionID, MessageID, Buffer, Offset, Data); }
 
 namespace Protocol
 {
@@ -276,34 +142,34 @@ struct ReaderTupleElement
 		> NextElement;
 
 	protected:
-		template <typename LogType, typename HandlerType, typename... ExtraTypes>
-			bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, ExtraTypes const &... ExtraArguments)
+		template <typename HandlerType, typename... ExtraTypes>
+			bool Read(HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, ExtraTypes const &... ExtraArguments)
 		{
 			if ((VersionID == MessageType::Version::ID) && (MessageID == MessageType::ID))
 			{
 				SizeType Offset{(SizeType::Type)0};
-				return ReadImplementation<LogType, HandlerType, typename MessageDerivedTypes<>::Tuple, std::tuple<ExtraTypes...>>::Read(Log, Handler, VersionID, MessageID, Buffer, Offset, std::forward<ExtraTypes const &>(ExtraArguments)...);
+				return ReadImplementation<HandlerType, typename MessageDerivedTypes<>::Tuple, std::tuple<ExtraTypes...>>::Read(Handler, VersionID, MessageID, Buffer, Offset, std::forward<ExtraTypes const &>(ExtraArguments)...);
 			}
-			return NextElement::Read(Log, Handler, VersionID, MessageID, Buffer);
+			return NextElement::Read(Handler, VersionID, MessageID, Buffer);
 		}
 
 	private:
-		template <typename LogType, typename HandlerType, typename UnreadTypes, typename ReadTypes> struct ReadImplementation {};
-		template <typename LogType, typename HandlerType, typename NextType, typename... RemainingTypes, typename... ReadTypes>
-			struct ReadImplementation<LogType, HandlerType, std::tuple<NextType, RemainingTypes...>, std::tuple<ReadTypes...>>
+		template <typename HandlerType, typename UnreadTypes, typename ReadTypes> struct ReadImplementation {};
+		template <typename HandlerType, typename NextType, typename... RemainingTypes, typename... ReadTypes>
+			struct ReadImplementation<HandlerType, std::tuple<NextType, RemainingTypes...>, std::tuple<ReadTypes...>>
 		{
-			static bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
+			static bool Read(HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
 			{
 				NextType Data;
-				if (!ProtocolRead(Log, VersionID, MessageID, Buffer, Offset, Data)) return false;
-				return ReadImplementation<LogType, HandlerType, std::tuple<RemainingTypes...>, std::tuple<ReadTypes..., NextType>>::Read(Log, Handler, VersionID, MessageID, Buffer, Offset, std::forward<ReadTypes const &>(ReadData)..., std::move(Data));
+				if (!ProtocolRead(VersionID, MessageID, Buffer, Offset, Data)) return false;
+				return ReadImplementation<HandlerType, std::tuple<RemainingTypes...>, std::tuple<ReadTypes..., NextType>>::Read(Handler, VersionID, MessageID, Buffer, Offset, std::forward<ReadTypes const &>(ReadData)..., std::move(Data));
 			}
 		};
 
-		template <typename LogType, typename HandlerType, typename... ReadTypes>
-			struct ReadImplementation<LogType, HandlerType, std::tuple<>, std::tuple<ReadTypes...>>
+		template <typename HandlerType, typename... ReadTypes>
+			struct ReadImplementation<HandlerType, std::tuple<>, std::tuple<ReadTypes...>>
 		{
-			static bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
+			static bool Read(HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer, SizeType &Offset, ReadTypes const &...ReadData)
 			{
 				Handler.Handle(MessageType{}, std::forward<ReadTypes const &>(ReadData)...);
 				return true;
@@ -356,9 +222,8 @@ struct ReaderTupleElement
 {
 	typedef std::vector<uint8_t> BufferType;
 
-	template <typename LogType, typename HandlerType> bool Read(LogType &Log, HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
+	template <typename HandlerType> bool Read(HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
 	{
-		Log.Warn() << "Read message with invalid version or message type (version " << *VersionID << ") with invalid message type: " << *MessageID;
 		assert(false);
 		return false;
 	}
@@ -374,10 +239,8 @@ template <typename ElementType> struct SubVector
       ElementType &operator[](size_t Index) { assert(*this); assert(Index < Length); return Data[Index]; }
 };
 
-template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
+template <typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
 {
-	Reader(LogType &Log) : Log(Log) {}
-
 	// StreamType must have SubVector<uint8_t> const &Read(size_t Length, size_t Offset = 0) and void Consume(size_t) methods.
 	template <typename StreamType, typename HandlerType, typename... ExtraTypes> bool Read(StreamType &&Stream, HandlerType &Handler, ExtraTypes const ...ExtraArguments)
 	{
@@ -390,7 +253,7 @@ template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupl
 		auto Body = Stream.Read(StrictCast(DataSize, size_t), StrictCast(HeaderSize, size_t));
 		if (!Body) return true;
 
-		bool Out = HeadElement::Read(Log, Handler, VersionID, MessageID, Body, ExtraArguments...);
+		bool Out = HeadElement::Read(Handler, VersionID, MessageID, Body, ExtraArguments...);
 
 		static_assert(sizeof(HeaderSize) == sizeof(DataSize), "U suk");
 		static_assert(sizeof(typename decltype(HeaderSize)::Type) == sizeof(typename decltype(DataSize)::Type), "U suk");
@@ -411,8 +274,6 @@ template <typename LogType, typename ...MessageTypes> struct Reader : ReaderTupl
 
 	private:
 		typedef ReaderTupleElement<0, 0, void, MessageTypes...> HeadElement;
-
-		LogType &Log;
 };
 
 }

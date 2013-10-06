@@ -1,5 +1,13 @@
 #include "core.h"
 
+uint64_t GeneratePUID(void) // Probably Unique ID
+{
+	std::mt19937 Random;
+	return std::uniform_int_distribution<uint64_t>{}(Random);
+}
+
+FilePieces::FilePieces(void) : Runs{0} {}
+
 FilePieces::FilePieces(uint64_t Size) : Runs{0, Size} {}
 
 bool FilePieces::Finished(void) const { return Runs.size() == 1; }
@@ -62,48 +70,48 @@ void FilePieces::Set(uint64_t Index)
 	Runs.swap(NewRuns);
 }
 
-CoreConnection::CoreConnection(Core &Parent, std::string cosnt &Host, uint16_t Port, int Socket, ev_loop *EVLoop) :
+CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) :
 	Network<CoreConnection>::Connection{Host, Port, Socket, EVLoop, this}, Parent(Parent) { }
 
-bool CoreConnection::IdleWrite(CoreConnection &Info)
+bool CoreConnection::IdleWrite(void)
 {
 	if (!Announce.empty())
 	{
-		Info.Send(NP1V1Prepare, Announce.front().ID, Announce.front().Size);
+		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Size);
 		Announce.pop();
 		return true;
 	}
 
-	if (DataStatus.File)
+	if (Response.File)
 	{
 		std::vector<uint8_t> Data(ChunkSize);
-		DataStatus.File.read(&Data[0], Data.size());
-		Send(NP1V1Data, DataStatus.ID, Chunk++, Data);
+		Response.File.read((char *)&Data[0], Data.size());
+		Send(NP1V1Data{}, Response.ID, Response.Chunk++, Data);
 		return true;
 	}
 
 	return false;
 }
 
-void CoreConnection::HandleTimer(std::time_point const &Now)
+void CoreConnection::HandleTimer(uint64_t const &Now)
 {
-	Send(NP1V1Clock, Parent.ID, Now);
+	Send(NP1V1Clock{}, Parent.ID, Now);
 
-	if (Request.File.is_open() && ((Clock::now() - Request.LastResponse) > std::chrono::time(10)))
-	Send(NP1V1Request, Connection.Request.ID, Connection.Request.Pieces.Next());
+	if (Request.File.is_open() && ((GetNow() - Request.LastResponse) > 10 * 1000))
+		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 }
 
 void CoreConnection::Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t const &SystemTime)
 {
-	Parent.Net.Forward(NP1V1Clock, State, InstanceID, SystemTime);
-	if (Parent->ClockCallback) Parent->ClockCallback(InstanceID, SystemTime);
+	Parent.Net.Forward(NP1V1Clock{}, *this, InstanceID, SystemTime);
+	if (Parent.ClockCallback) Parent.ClockCallback(InstanceID, SystemTime);
 }
 
 void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, uint64_t const &Size)
 {
-	bool Found = Parent.Library.find(MediaID);
+	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
-	Parent.Net.Forward(NP1V1Prepare, *this, MediaID, Size);
+	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Size);
 	PendingRequests.emplace_back(MediaID, Size);
 }
 
@@ -111,25 +119,25 @@ void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t cons
 {
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
-	if (!DataStatus.File.is_open() || (MediaID != DataStatus.ID))
-		DataStatus.File.swap({Out->Path, std::fstream::in});
-	DataStatus.File.seekg(From * ChunkSize);
-	DataStatus.ID = MediaID;
-	DataStatus.Chunk = From;
+	if (!Response.File.is_open() || (MediaID != Response.ID))
+		Response.File.open(std::get<1>(Out->second), std::fstream::in);
+	Response.File.seekg(From * ChunkSize);
+	Response.ID = MediaID;
+	Response.Chunk = From;
 	WakeIdleWrite();
 }
 
 void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes)
 {
-	if (MediaID != Request.ID) return {};
-	if (Chunk != Request.Pieces.Next()) return {};
+	if (MediaID != Request.ID) return;
+	if (Chunk != Request.Pieces.Next()) return;
 	assert(Request.File);
 	assert(Request.File.tellp() == Chunk * ChunkSize);
-	if (Bytes.size() < ChunkSize || (Chunk * ChunkSize + Bytes.size() != Request.Size)) return {}; // Probably an error condition
+	if (Bytes.size() < ChunkSize || (Chunk * ChunkSize + Bytes.size() != Request.Size)) return; // Probably an error condition
 	Request.Pieces.Set(Chunk);
-	Request.File.write(&Bytes[0], ChunkSize);
-	Request.LastResponse = Clock::now();
-	if (!Request.Pieces.Finished()) return ;
+	Request.File.write((char const *)&Bytes[0], ChunkSize);
+	Request.LastResponse = GetNow();
+	if (!Request.Pieces.Finished()) return;
 
 	Request.File.close();
 	Parent.Library.emplace(Request.ID, Request.Size, Request.Path);
@@ -140,44 +148,45 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 		Request.ID = PendingRequests.front().ID;
 		Request.Size = PendingRequests.front().Size;
 		Request.Pieces = {};
-		Request.Path = Root / FormatHash(Request.ID);
-		Request.File = {Path, std::fstream::out};
-		Send(NP1V1Request, Request.ID, Request.Pieces.Next());
+		Request.Path = Parent.TempPath / FormatHash(Request.ID);
+		Request.File.open(Request.Path, std::fstream::out);
+		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 	}
 }
 
 void CoreConnection::Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime)
 {
-	Parent.Net.Forward(NP1V1Play, this, MediaID, MediaTime, SystemTime);
+	Parent.Net.Forward(NP1V1Play{}, *this, MediaID, MediaTime, SystemTime);
 	Parent.LastPlaying = true;
 	Parent.LastMediaTime = MediaTime;
-	ParentLastSystemTime = SystemTime;
+	Parent.LastSystemTime = SystemTime;
 	if (Parent.PlayCallback) Parent.PlayCallback(MediaID, MediaTime, SystemTime);
 }
 
 void CoreConnection::Handle(NP1V1Stop)
 {
-	Net.Forward(NP1V1Stop, Info);
+	Parent.Net.Forward(NP1V1Stop{}, *this);
 	Parent.LastPlaying = false;
-	if (StopCallback) StopCallback();
+	if (Parent.StopCallback) Parent.StopCallback();
 }
 
 void CoreConnection::Handle(NP1V1Chat, std::string const &Message)
 {
-	Net.Forward(NP1V1Chat, State, Message);
-	if (ChatCallback) ChatCallback(Message);
+	Parent.Net.Forward(NP1V1Chat{}, *this, Message);
+	if (Parent.ChatCallback) Parent.ChatCallback(Message);
 }
 
 Core::Core(void) :
 	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
-	ID{std::uniform_int_distribution<uint64_t>{}(std::mt19937{})},
-	Net<CoreConnection, NP1V1Clock, NP1V1Prepare, NP1V1Request, NP1V1Data, NP1V1Play, NP1V1Stop, NP1V1Chat>
+	ID{GeneratePUID()},
+	Net
 	{
-		[this](std::string const &Host, uint16_t Port, int Socket, ev_loop *EVLoop) // Create connection
+		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
+		[this](std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) // Create connection
 		{
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
-				Out->Announce.emplace(Item->first, Item->second.Size);
+				Out->Announce.emplace(Item.first, std::get<0>(Item.second));
 			return Out;
 		},
 		10.0f
@@ -195,16 +204,27 @@ void Core::Open(bool Listen, std::string const &Host, uint16_t Port)
 	Net.Open(Listen, Host, Port);
 }
 
+void Core::Transfer(std::function<void(void)> const &Call)
+{
+	Net.Transfer(Call);
+}
+
+void Core::Schedule(float Seconds, std::function<void(void)> const &Call)
+{
+	Net.Schedule(Seconds, Call);
+}
+
 void Core::Add(HashType const &MediaID, bfs::path const &Path)
 {
 	try
 	{
-		Library.emplace(MediaID, bfs::file_size(Path), Path);
+		size_t Size = bfs::file_size(Path);
+		Library.emplace(MediaID, Size, Path);
 
-		for (auto &Connection : Parent.GetConnections())
+		for (auto &Connection : Net.GetConnections())
 		{
-			Connection.Announce.emplace(MediaID, Position, SystemTime);
-			Connection.WakeIdleWrite();
+			Connection->Announce.emplace(MediaID, Size);
+			Connection->WakeIdleWrite();
 		}
 	}
 	catch (...) {} // TODO Log/warn?
@@ -212,5 +232,5 @@ void Core::Add(HashType const &MediaID, bfs::path const &Path)
 
 void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
 {
-	Parent.Broadcast(NP1V1Play, MediaID, Position, SystemTime);
+	Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime);
 }

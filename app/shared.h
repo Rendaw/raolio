@@ -47,7 +47,8 @@ template<typename T, typename... Args> std::unique_ptr<T> make_unique(Args&&... 
 struct CallTransferType
 {
 	virtual ~CallTransferType(void);
-	virtual void operator()(std::function<void(void)> const &Call) = 0;
+	virtual void Transfer(std::function<void(void)> const &Call) = 0;
+	void operator ()(std::function<void(void)> const &Call);
 };
 
 std::string FormatHash(HashType const &Hash)
