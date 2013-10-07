@@ -126,17 +126,17 @@ template <typename ConnectionType> struct Network
 			AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
 			AddressInfo.sin_port = htons(Port);
 
-			if (bind(Socket, static_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
+			if (bind(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
 				throw SystemError() << "Failed to bind (" << Host << ":" << Port << "): " << strerror(errno);
 			if (listen(Socket, 2) == -1) throw SystemError() << "Failed to listen on (" << Port << "): " << strerror(errno);
 		}
 
 		~Listener(void) { assert(Socket >= 0); close(Socket); }
 
-		std::unique_ptr<ConnectionType> Accept(CreateConnectionCallback const &CreateConnection, struct ev_loop *EVLoop)
+		ConnectionType *Accept(CreateConnectionCallback const &CreateConnection, struct ev_loop *EVLoop)
 		{
 			sockaddr_in AddressInfo{};
-			int AddressInfoLength = sizeof(AddressInfo);
+			socklen_t AddressInfoLength = sizeof(AddressInfo);
 			int ConnectionSocket = accept(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), &AddressInfoLength);
 			if (ConnectionSocket == -1) return nullptr; // Log?
 			return CreateConnection(inet_ntoa(AddressInfo.sin_addr), AddressInfo.sin_port, ConnectionSocket, EVLoop);
@@ -190,7 +190,7 @@ template <typename ConnectionType> struct Network
 	}
 
 	// Network thread only
-	std::vector<std::unique_ptr<ConnectionType>> GetConnections(void) { return Connections; }
+	std::vector<std::unique_ptr<ConnectionType>> const &GetConnections(void) { return Connections; }
 
 	template <typename MessageType, typename... ArgumentTypes> void Broadcast(MessageType, ArgumentTypes const &... Arguments)
 	{
@@ -218,10 +218,21 @@ template <typename ConnectionType> struct Network
 
 		// Interface between other and event thread
 		mutable bool Die = false;
-		struct OpenInfo { bool Listen; std::string Host; uint16_t Port; };
+		struct OpenInfo
+		{
+			bool Listen;
+			std::string Host;
+			uint16_t Port;
+			OpenInfo(bool Listen, std::string const &Host, uint16_t Port) : Listen{Listen}, Host{Host}, Port{Port} {}
+		};
 		std::queue<OpenInfo> OpenQueue;
 		std::queue<std::function<void(void)>> TransferQueue;
-		struct ScheduleInfo { float Seconds; std::function<void(void)> Callback; };
+		struct ScheduleInfo
+		{
+			float Seconds;
+			std::function<void(void)> Callback;
+			ScheduleInfo(float Seconds, std::function<void(void)> const &Callback) : Callback(Callback) {}
+		};
 		std::queue<ScheduleInfo> ScheduleQueue;
 
 		// Net-thread only
@@ -236,7 +247,7 @@ template <typename ConnectionType> struct Network
 			static void PreCallback(struct ev_loop *, DataType *Data, int EventFlags)
 			{
 				assert(EventFlags & EV_READ);
-				(*static_cast<EVData<DataType> *>(Data))->Callback();
+				static_cast<EVData<DataType> *>(Data)->Callback();
 			}
 		};
 
@@ -258,16 +269,14 @@ template <typename ConnectionType> struct Network
 
 			auto const CreateConnectionWatcher = [&](ConnectionType &Socket)
 			{
+				auto ReadWatcher = new EVData<ev_io>{[&](void)
 				{
-					auto ReadWatcher = new EVData<ev_io>{[&](void)
-					{
-						Reader.Read(Socket.ReadBuffer, Socket);
-						// Ignore errors?
-					}};
-					IOCallbacks.emplace_back(ReadWatcher);
-					ev_io_init(ReadWatcher, EVData<ev_io>::PreCallback, Socket.Socket, EV_READ);
-					ev_io_start(EVLoop, ReadWatcher);
-				}
+					Reader.Read(Socket.ReadBuffer, Socket);
+					// Ignore errors?
+				}};
+				IOCallbacks.emplace_back(ReadWatcher);
+				ev_io_init(ReadWatcher, EVData<ev_io>::PreCallback, Socket.Socket, EV_READ);
+				ev_io_start(EVLoop, ReadWatcher);
 			};
 
 			EVData<ev_async> AsyncOpenData([&](void)
@@ -299,7 +308,7 @@ template <typename ConnectionType> struct Network
 							auto ConnectionInfo = Socket->Accept(CreateConnection, EVLoop);
 							if (!ConnectionInfo) return;
 							std::lock_guard<std::mutex> Lock(This->Mutex);
-							This->Connections.push_back(ConnectionInfo);
+							This->Connections.push_back(std::unique_ptr<ConnectionType>{ConnectionInfo});
 							CreateConnectionWatcher(*ConnectionInfo);
 						});
 						IOCallbacks.emplace_back(ListenerData);

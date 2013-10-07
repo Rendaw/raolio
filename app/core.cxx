@@ -120,7 +120,7 @@ void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t cons
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
 	if (!Response.File.is_open() || (MediaID != Response.ID))
-		Response.File.open(std::get<1>(Out->second), std::fstream::in);
+		Response.File.open(Out->second.Path, std::fstream::in);
 	Response.File.seekg(From * ChunkSize);
 	Response.ID = MediaID;
 	Response.Chunk = From;
@@ -140,7 +140,7 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 	if (!Request.Pieces.Finished()) return;
 
 	Request.File.close();
-	Parent.Library.emplace(Request.ID, Request.Size, Request.Path);
+	Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path});
 	if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path);
 
 	if (!PendingRequests.empty())
@@ -186,7 +186,7 @@ Core::Core(void) :
 		{
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
-				Out->Announce.emplace(Item.first, std::get<0>(Item.second));
+				Out->Announce.emplace(Item.first, Item.second.Size);
 			return Out;
 		},
 		10.0f
@@ -219,7 +219,7 @@ void Core::Add(HashType const &MediaID, bfs::path const &Path)
 	try
 	{
 		size_t Size = bfs::file_size(Path);
-		Library.emplace(MediaID, Size, Path);
+		Library.emplace(MediaID, LibraryInfo{Size, Path});
 
 		for (auto &Connection : Net.GetConnections())
 		{

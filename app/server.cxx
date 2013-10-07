@@ -1,11 +1,16 @@
 #include "core.h"
 
+#include <condition_variable>
+#include <csignal>
+
+bool Dead = false;
 std::mutex Mutex;
-std::condition_variable Sleep(Mutex);
+std::condition_variable Sleep;
 
 int main(int argc, char **argv)
 {
-	std::signal(SIGINT, [](int) { Sleep.notify_all(); });
+	std::unique_lock<std::mutex> SleepLock(Mutex);
+	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Dead = true; Sleep.notify_all(); });
 
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
@@ -15,7 +20,8 @@ int main(int argc, char **argv)
 	Core Core;
 	Core.Open(true, Host, Port);
 
-	Sleep.take();
+	while (!Dead)
+		Sleep.wait(SleepLock);
 
 	return 0;
 }

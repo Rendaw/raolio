@@ -10,7 +10,7 @@
 
 namespace bfs = boost::filesystem;
 
-extern constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
+constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
 
 DefineProtocol(NetProto1)
 
@@ -46,6 +46,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	{
 		HashType ID;
 		uint64_t Size;
+		MediaInfo(HashType const &ID, uint64_t const &Size) : ID(ID), Size{Size} {}
 	};
 
 	std::queue<MediaInfo> Announce;
@@ -118,7 +119,13 @@ struct Core : CallTransferType
 		uint64_t LastMediaTime;
 		uint64_t LastSystemTime;
 
-		std::map<HashType, std::tuple<uint64_t, bfs::path>> Library;
+		struct LibraryInfo
+		{
+			uint64_t Size;
+			bfs::path Path;
+			LibraryInfo(uint64_t Size, bfs::path const &Path) : Size{Size}, Path{Path} {}
+		};
+		std::map<HashType, LibraryInfo> Library;
 
 		Network<CoreConnection> Net;
 };

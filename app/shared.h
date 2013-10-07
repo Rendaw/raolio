@@ -51,13 +51,7 @@ struct CallTransferType
 	void operator ()(std::function<void(void)> const &Call);
 };
 
-std::string FormatHash(HashType const &Hash)
-{
-	std::stringstream Display;
-	Display << std::hex << std::setw(2);
-	for (auto Byte : Hash) Display << static_cast<unsigned int>(Byte);
-	return Display.str();
-}
+std::string FormatHash(HashType const &Hash);
 
 #endif
 

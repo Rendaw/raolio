@@ -36,7 +36,18 @@ typedef StrictType(uint8_t) MessageIDType;
 typedef StrictType(uint16_t) SizeType;
 typedef StrictType(uint16_t) ArraySizeType;
 
-typedef std::vector<uint8_t> BufferType;
+template <typename ElementType> struct SubVector
+{
+      SubVector(void) : Data{nullptr}, Length{0} {}
+      SubVector(std::vector<ElementType> &Base, size_t Start, size_t Length) : Data{&Base[Start]}, Length{Length} {}
+      ElementType *const Data;
+      size_t const Length;
+      operator bool(void) const { return Length > 0; }
+      ElementType &operator[](size_t Index) { assert(*this); assert(Index < Length); return Data[Index]; }
+      ElementType const &operator[](size_t Index) const { assert(*this); assert(Index < Length); return Data[Index]; }
+};
+typedef SubVector<uint8_t> BufferType;
+
 }
 
 template <typename Type, typename Enable = void> struct ProtocolOperations;
@@ -220,23 +231,11 @@ struct ReaderTupleElement
 	void
 >
 {
-	typedef std::vector<uint8_t> BufferType;
-
 	template <typename HandlerType> bool Read(HandlerType &Handler, VersionIDType const &VersionID, MessageIDType const &MessageID, BufferType const &Buffer)
 	{
 		assert(false);
 		return false;
 	}
-};
-
-template <typename ElementType> struct SubVector
-{
-      SubVector(void) : Data{nullptr}, Length{0} {}
-      SubVector(std::vector<ElementType> const &Base, size_t Start, size_t Length) : Data{&Base[Start]}, Length{Length} {}
-      ElementType *Data;
-      size_t Length;
-      operator bool(void) { return Length > 0; }
-      ElementType &operator[](size_t Index) { assert(*this); assert(Index < Length); return Data[Index]; }
 };
 
 template <typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
@@ -258,15 +257,6 @@ template <typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, voi
 		static_assert(sizeof(HeaderSize) == sizeof(DataSize), "U suk");
 		static_assert(sizeof(typename decltype(HeaderSize)::Type) == sizeof(typename decltype(DataSize)::Type), "U suk");
 		static_assert(std::is_same<typename decltype(HeaderSize)::Type, typename decltype(DataSize)::Type>::value, "U suk");
-		SizeType a{HeaderSize};
-		SizeType b{DataSize};
-		a + b;
-		a + DataSize;
-		DataSize + a;
-		HeaderSize + b;
-		b + HeaderSize;
-		HeaderSize + DataSize;
-		SizeType x = HeaderSize + DataSize;
 		Stream.Consume(StrictCast(HeaderSize + DataSize, size_t));
 
 		return Out;

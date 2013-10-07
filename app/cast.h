@@ -28,20 +28,20 @@ template <size_t Uniqueness, typename ValueType> struct ExplicitCastable<Uniquen
 	constexpr ValueType const &operator *(void) const { return Value; }
 	constexpr static size_t Size = sizeof(ValueType);
 
-	constexpr ThisType operator +(ThisType const &That) const { return Value + *That; }
-	constexpr ThisType operator +(ValueType const &That) const { return Value + That; }
+	constexpr ThisType operator +(ThisType const &That) const { return static_cast<ValueType>(Value + *That); }
+	constexpr ThisType operator +(ValueType const &That) const { return static_cast<ValueType>(Value + That); }
 	template <typename ThatType> ThisType operator +(ThatType const &) const = delete;
 
-	constexpr ThisType operator -(ThisType const &That) const { return Value - *That; }
-	constexpr ThisType operator -(ValueType const &That) const { return Value - That; }
+	constexpr ThisType operator -(ThisType const &That) const { return static_cast<ValueType>(Value - *That); }
+	constexpr ThisType operator -(ValueType const &That) const { return static_cast<ValueType>(Value - That); }
 	template <typename ThatType> ThisType operator -(ThatType const &) const = delete;
 
-	constexpr ThisType operator *(ThisType const &That) const { return Value * *That; }
-	constexpr ThisType operator *(ValueType const &That) const { return Value * That; }
+	constexpr ThisType operator *(ThisType const &That) const { return static_cast<ValueType>(Value * *That); }
+	constexpr ThisType operator *(ValueType const &That) const { return static_cast<ValueType>(Value * That); }
 	template <typename ThatType> ThisType operator *(ThatType const &) const = delete;
 
-	constexpr ThisType operator /(ThisType const &That) const { return Value / *That; }
-	constexpr ThisType operator /(ValueType const &That) const { return Value / That; }
+	constexpr ThisType operator /(ThisType const &That) const { return static_cast<ValueType>(Value / *That); }
+	constexpr ThisType operator /(ValueType const &That) const { return static_cast<ValueType>(Value / That); }
 	template <typename ThatType> ThisType operator /(ThatType const &) const = delete;
 
 	template <typename ThatType> ThisType operator +=(ThatType const &) = delete;
@@ -94,7 +94,7 @@ template <size_t Uniqueness, typename ValueType> struct ExplicitCastable<Uniquen
 template <size_t Uniqueness, typename ValueType> constexpr size_t ExplicitCastable<Uniqueness, ValueType, typename std::enable_if<std::is_integral<ValueType>::value>::type>::Size;
 
 #define StrictType(Type) ::ExplicitCastable<__COUNTER__, Type>
-#define StrictCast(Value, ToType) Value(ExplicitType<ToType>())
+#define StrictCast(Value, ToType) (Value)(ExplicitType<ToType>())
 
 
 #endif
