@@ -82,12 +82,12 @@ bool CoreConnection::IdleWrite(void)
 		return true;
 	}
 
-	if (Response.File)
+	if (Response.File.is_open() && !Response.File.eof())
 	{
 		std::vector<uint8_t> Data(ChunkSize);
 		Response.File.read((char *)&Data[0], Data.size());
 		Send(NP1V1Data{}, Response.ID, Response.Chunk++, Data);
-		return true;
+		if (!Response.File.eof()) return true;
 	}
 
 	return false;
@@ -151,6 +151,7 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 		Request.Path = Parent.TempPath / FormatHash(Request.ID);
 		Request.File.open(Request.Path, std::fstream::out);
 		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
+		PendingRequests.pop();
 	}
 }
 
@@ -233,4 +234,9 @@ void Core::Add(HashType const &MediaID, bfs::path const &Path)
 void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
 {
 	Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime);
+}
+
+void Core::Stop(void)
+{
+	Net.Broadcast(NP1V1Stop{});
 }

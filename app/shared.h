@@ -9,8 +9,6 @@
 #include <iomanip>
 #include <chrono>
 
-typedef std::array<uint8_t, 16> HashType;
-
 struct String
 {
 	String(void) {}

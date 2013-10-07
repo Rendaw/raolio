@@ -10,6 +10,7 @@ local SharedObjects = Define.Objects
 	Sources = Item()
 		:Include 'shared.cxx'
 		:Include 'core.cxx'
+		:Include 'hash.cxx'
 }
 
 icbmc = Define.Executable
@@ -28,6 +29,16 @@ icbms = Define.Executable
 	Name = 'icbms',
 	Sources = Item()
 		:Include 'server.cxx',
+	Objects = SharedObjects,
+	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
+}
+
+icbmc = Define.Executable
+{
+	Name = 'icbmr',
+	Sources = Item()
+		:Include 'remote.cxx'
+		:Include(icmbcMocOutputs),
 	Objects = SharedObjects,
 	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
 }

@@ -102,6 +102,7 @@ struct Core : CallTransferType
 	// Core thread
 	void Add(HashType const &MediaID, bfs::path const &Path);
 	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
+	void Stop(void);
 
 	// Callbacks
 	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;

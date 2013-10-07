@@ -84,7 +84,7 @@ void ClientCore::Play(void)
 }
 
 void ClientCore::Stop(void)
-	{ CallTransfer([&](void) { StopInternal(); }); }
+	{ CallTransfer([&](void) { LocalStopInternal(); }); }
 
 struct VLCParsedUserData : ExtraScopeItem
 {
@@ -160,6 +160,12 @@ void ClientCore::PlayInternal(HashType const &MediaID, uint64_t Position, uint64
 		});
 	}
 	Playing = Media->second.get();
+}
+
+void ClientCore::LocalStopInternal(void)
+{
+	Parent.Stop();
+	StopInternal();
 }
 
 void ClientCore::StopInternal(void)
