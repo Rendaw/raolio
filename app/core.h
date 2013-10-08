@@ -88,6 +88,8 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	void Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime);
 	void Handle(NP1V1Stop);
 	void Handle(NP1V1Chat, std::string const &Message);
+
+	bool RequestNext(void);
 };
 
 struct Core : CallTransferType
@@ -107,6 +109,9 @@ struct Core : CallTransferType
 	void Chat(std::string const &Message);
 
 	// Callbacks
+	enum LogPriority { Important, Unimportant, Debug, Useless };
+	std::function<void(LogPriority Priority, std::string const &Message)> LogCallback;
+
 	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;
 	std::function<void(HashType const &MediaID, bfs::path const &Path)> AddCallback;
 	std::function<void(HashType const &MediaID, uint64_t MediaTime, uint64_t const &SystemTime)> PlayCallback;

@@ -86,6 +86,9 @@ void ClientCore::Play(void)
 void ClientCore::Stop(void)
 	{ CallTransfer([&](void) { LocalStopInternal(); }); }
 
+void ClientCore::Chat(std::string const &Message)
+	{ CallTransfer([&](void) { Parent.Chat(Message); }); }
+
 struct VLCParsedUserData : ExtraScopeItem
 {
 	VLCParsedUserData(ClientCore &Core, HashType const &Hash) : Core(Core), Hash(Hash) {}

@@ -149,11 +149,12 @@ template <typename ConnectionType> struct Network
 
 	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
 	{
-		std::unique_lock<std::mutex> Lock;
 		std::unique_lock<std::mutex> Lock(Mutex);
 		Thread = std::thread{Network::Run<MessageTypes...>, this, CreateConnection, TimerPeriod};
 		InitSignal.wait(Lock);
 	}
+
+	std::function<void(std::string const &Message)> LogCallback;
 
 	~Network(void)
 	{
@@ -252,7 +253,7 @@ template <typename ConnectionType> struct Network
 		// Thread implementation
 		template <typename ...MessageTypes> static void Run(Network *This, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
 		{
-			std::lock_guard<std::mutex> Lock(This->Mutex); // Waiting for init signal wait
+			std::unique_lock<std::mutex> Lock(This->Mutex); // Waiting for init signal wait
 
 			// Intermediate event callback storage
 			std::vector<std::unique_ptr<EVData<ev_io>>> IOCallbacks;
@@ -280,7 +281,7 @@ template <typename ConnectionType> struct Network
 			EVData<ev_async> AsyncOpenData([&](EVData<ev_async> *)
 			{
 				/// Exit loop if dying
-				if (This->Die) { ev_break(EVLoop); return; }
+				if (This->Die) { std::cout << "Got die." << std::endl; ev_break(EVLoop); return; }
 
 				while (true)
 				{
@@ -298,7 +299,7 @@ template <typename ConnectionType> struct Network
 					{
 						Listener *Socket = nullptr;
 						try { auto Socket = new Listener{Directive.Host, Directive.Port}; }
-						catch (...) { continue; } // TODO Log or warn?
+						catch (SystemError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						Listeners.emplace_back(Socket);
 
 						auto ListenerData = new EVData<ev_io>([&, Socket](EVData<ev_io> *)
@@ -317,7 +318,7 @@ template <typename ConnectionType> struct Network
 					{
 						ConnectionType *Socket = nullptr;
 						try { auto Socket = CreateConnection(Directive.Host, Directive.Port, -1, EVLoop); }
-						catch (...) { continue; } // TODO Log or warn?
+						catch (SystemError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						This->Connections.emplace_back(Socket);
 						CreateConnectionWatcher(*Socket);
 					}
@@ -396,6 +397,8 @@ template <typename ConnectionType> struct Network
 			}
 
 			This->InitSignal.notify_all();
+
+			Lock.unlock();
 
 			ev_run(EVLoop, 0);
 		}

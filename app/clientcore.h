@@ -76,6 +76,7 @@ struct ClientCore
 	void Play(HashType const &MediaID, float Position);
 	void Play(void);
 	void Stop(void);
+	void Chat(std::string const &Message);
 
 	private:
 		void AddInternal(HashType const &Hash, bfs::path const &Filename);
@@ -88,6 +89,7 @@ struct ClientCore
 		void PlayInternal(HashType const &MediaID, uint64_t Position, uint64_t SystemTime, uint64_t Now);
 		void PlayInternal(HashType const &MediaID, float Position);
 		void PlayInternal(void);
+		void LocalStopInternal(void);
 		void StopInternal(void);
 		bool IsPlayingInternal(void);
 

@@ -10,7 +10,7 @@ std::condition_variable Sleep;
 int main(int argc, char **argv)
 {
 	std::unique_lock<std::mutex> SleepLock(Mutex);
-	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Dead = true; Sleep.notify_all(); });
+	std::signal(SIGINT, [](int) { std::cout << "Got SIGINT." << std::endl; std::lock_guard<std::mutex> Lock(Mutex); Dead = true; Sleep.notify_all(); });
 
 	std::string Command;
 	int CommandIndex;
@@ -34,8 +34,15 @@ int main(int argc, char **argv)
 	}
 
 	Core Core;
-	Core.Open(true, Host, Port);
-	std::cout << "Starting server @ " << Host << ":" << Port << std::endl;
+	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)
+	{
+#ifndef NDEBUG
+		if (Priority >= Core::Debug) return;
+#endif
+		std::cout << Priority << ": " << Message << std::endl;
+	};
+	Core.Open(false, Host, Port);
+	std::cout << "Connecting to " << Host << ":" << Port << std::endl;
 
 	if (Command.empty()) // Go with the flow
 		{}
@@ -52,7 +59,7 @@ int main(int argc, char **argv)
 			std::cerr << "Invalid file to --add '" << argv[CommandIndex + 1] << "'" << std::endl;
 			goto FullBreak;
 		}
-		
+
 		Core.Transfer([&, Hash](void) { Core.Add(Hash->first, argv[CommandIndex + 1]); });
 	}
 	else if (Command == "--play")
@@ -68,7 +75,7 @@ int main(int argc, char **argv)
 			std::cerr << "Invalid hash provided for --add." << std::endl;
 			goto FullBreak;
 		}
-		
+
 		Core.Transfer([&, Hash](void) { Core.Play(*Hash, 0u, GetNow()); });
 	}
 	else if (Command == "--stop")
