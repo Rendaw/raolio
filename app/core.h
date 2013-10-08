@@ -4,6 +4,7 @@
 #include "protocol.h"
 #include "protocoloperations.h"
 #include "network.h"
+#include "hash.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <map>
@@ -60,7 +61,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 		bfs::path Path;
 		bfs::fstream File;
 	} Request;
-	std::vector<MediaInfo> PendingRequests;
+	std::queue<MediaInfo> PendingRequests;
 	struct FinishedMedia
 	{
 		HashType ID;
@@ -99,10 +100,11 @@ struct Core : CallTransferType
 	void Transfer(std::function<void(void)> const &Call) override;
 	void Schedule(float Seconds, std::function<void(void)> const &Call);
 
-	// Core thread
+	// Core thread only
 	void Add(HashType const &MediaID, bfs::path const &Path);
 	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
 	void Stop(void);
+	void Chat(std::string const &Message);
 
 	// Callbacks
 	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;

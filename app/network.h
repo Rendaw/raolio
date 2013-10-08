@@ -149,6 +149,7 @@ template <typename ConnectionType> struct Network
 
 	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
 	{
+		std::unique_lock<std::mutex> Lock;
 		std::unique_lock<std::mutex> Lock(Mutex);
 		Thread = std::thread{Network::Run<MessageTypes...>, this, CreateConnection, TimerPeriod};
 		InitSignal.wait(Lock);
@@ -241,14 +242,11 @@ template <typename ConnectionType> struct Network
 		// Used only in thread run
 		template <typename DataType> struct EVData : DataType
 		{
-			std::function<void(void)> Callback;
-			EVData(std::function<void(void)> const &Callback) : Callback(Callback) {}
+			std::function<void(EVData<DataType> *)> Callback;
+			EVData(std::function<void(EVData<DataType> *)> const &Callback) : Callback(Callback) {}
 
 			static void PreCallback(struct ev_loop *, DataType *Data, int EventFlags)
-			{
-				assert(EventFlags & EV_READ);
-				static_cast<EVData<DataType> *>(Data)->Callback();
-			}
+				{ auto This = static_cast<EVData<DataType> *>(Data); This->Callback(This); }
 		};
 
 		// Thread implementation
@@ -269,17 +267,17 @@ template <typename ConnectionType> struct Network
 
 			auto const CreateConnectionWatcher = [&](ConnectionType &Socket)
 			{
-				auto ReadWatcher = new EVData<ev_io>{[&](void)
+				auto ReadWatcher = new EVData<ev_io>([&](EVData<ev_io> *)
 				{
 					Reader.Read(Socket.ReadBuffer, Socket);
 					// Ignore errors?
-				}};
+				});
 				IOCallbacks.emplace_back(ReadWatcher);
 				ev_io_init(ReadWatcher, EVData<ev_io>::PreCallback, Socket.Socket, EV_READ);
 				ev_io_start(EVLoop, ReadWatcher);
 			};
 
-			EVData<ev_async> AsyncOpenData([&](void)
+			EVData<ev_async> AsyncOpenData([&](EVData<ev_async> *)
 			{
 				/// Exit loop if dying
 				if (This->Die) { ev_break(EVLoop); return; }
@@ -303,7 +301,7 @@ template <typename ConnectionType> struct Network
 						catch (...) { continue; } // TODO Log or warn?
 						Listeners.emplace_back(Socket);
 
-						auto ListenerData = new EVData<ev_io>([&, Socket]
+						auto ListenerData = new EVData<ev_io>([&, Socket](EVData<ev_io> *)
 						{
 							auto ConnectionInfo = Socket->Accept(CreateConnection, EVLoop);
 							if (!ConnectionInfo) return;
@@ -328,7 +326,7 @@ template <typename ConnectionType> struct Network
 			ev_async_init(&AsyncOpenData, EVData<ev_async>::PreCallback);
 			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, &AsyncOpenData); };
 
-			EVData<ev_async> AsyncTransferData([&](void)
+			EVData<ev_async> AsyncTransferData([&](EVData<ev_async> *)
 			{
 				while (true)
 				{
@@ -348,7 +346,7 @@ template <typename ConnectionType> struct Network
 			ev_async_init(&AsyncTransferData, EVData<ev_async>::PreCallback);
 			This->NotifyTransfer = [&](void) { ev_async_send(EVLoop, &AsyncTransferData); };
 
-			EVData<ev_async> AsyncScheduleData([&](void)
+			EVData<ev_async> AsyncScheduleData([&](EVData<ev_async> *)
 			{
 				while (true)
 				{
@@ -362,7 +360,7 @@ template <typename ConnectionType> struct Network
 					This->ScheduleQueue.pop();
 					This->Mutex.unlock();
 
-					EVData<ev_timer> *TimerData = new EVData<ev_timer>([&, TimerData, Directive]
+					auto TimerData = new EVData<ev_timer>([&, Directive](EVData<ev_timer> *TimerData)
 					{
 						Directive.Callback();
 						for (auto Callback = TimerCallbacks.begin(); ; Callback++)
@@ -385,12 +383,12 @@ template <typename ConnectionType> struct Network
 
 			if (TimerPeriod)
 			{
-				EVData<ev_timer> *TimerData = new EVData<ev_timer>([&, TimerData]
+				auto TimerData = new EVData<ev_timer>([&](EVData<ev_timer> *Timer)
 				{
 					auto Now = GetNow();
 					for (auto &Connection : This->Connections) Connection->HandleTimer(Now);
-					ev_timer_set(TimerData, *TimerPeriod, 0);
-					ev_timer_start(EVLoop, TimerData);
+					ev_timer_set(Timer, *TimerPeriod, 0);
+					ev_timer_start(EVLoop, Timer);
 				});
 				ev_timer_init(TimerData, EVData<ev_timer>::PreCallback, *TimerPeriod, 0);
 				TimerCallbacks.emplace_back(TimerData);

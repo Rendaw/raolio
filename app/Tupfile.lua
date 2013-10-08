@@ -1,16 +1,17 @@
-local icmbcMocOutputs = Define.Raw
-{
-	Inputs = Item 'qtaux.h',
-	Outputs = Item 'moc_qtaux.cxx',
-	Command = 'moc qtaux.h > moc_qtaux.cxx'
-}
-
 local SharedObjects = Define.Objects
 {
 	Sources = Item()
 		:Include 'shared.cxx'
 		:Include 'core.cxx'
 		:Include 'hash.cxx'
+		:Include 'md5.c'
+}
+
+--[[local icmbcMocOutputs = Define.Raw
+{
+	Inputs = Item 'qtaux.h',
+	Outputs = Item 'moc_qtaux.cxx',
+	Command = 'moc qtaux.h > moc_qtaux.cxx'
 }
 
 icbmc = Define.Executable
@@ -22,7 +23,7 @@ icbmc = Define.Executable
 		:Include(icmbcMocOutputs),
 	Objects = SharedObjects,
 	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem -lev'
-}
+}]]
 
 icbms = Define.Executable
 {
@@ -33,12 +34,11 @@ icbms = Define.Executable
 	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
 }
 
-icbmc = Define.Executable
+icbmr = Define.Executable
 {
 	Name = 'icbmr',
 	Sources = Item()
-		:Include 'remote.cxx'
-		:Include(icmbcMocOutputs),
+		:Include 'remote.cxx',
 	Objects = SharedObjects,
 	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
 }

@@ -112,7 +112,7 @@ void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, uint64_t cons
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
 	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Size);
-	PendingRequests.emplace_back(MediaID, Size);
+	PendingRequests.emplace(MediaID, Size);
 }
 
 void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From)
@@ -193,6 +193,7 @@ Core::Core(void) :
 		10.0f
 	}
 {
+	bfs::create_directory(TempPath);
 }
 
 Core::~Core(void)
@@ -232,11 +233,10 @@ void Core::Add(HashType const &MediaID, bfs::path const &Path)
 }
 
 void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
-{
-	Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime);
-}
+	{ Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime); }
 
 void Core::Stop(void)
-{
-	Net.Broadcast(NP1V1Stop{});
-}
+	{ Net.Broadcast(NP1V1Stop{}); }
+
+void Core::Chat(std::string const &Message)
+	{ Net.Broadcast(NP1V1Chat{}, Message); }

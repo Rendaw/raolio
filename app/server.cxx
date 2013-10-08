@@ -16,9 +16,9 @@ int main(int argc, char **argv)
 	uint16_t Port{20578};
 	if (argc >= 2) Host = argv[1];
 	if (argc >= 3) String(argv[2]) >> Port;
-	std::cout << "Starting server @ " << Host << ":" << Port << std::endl;
 	Core Core;
 	Core.Open(true, Host, Port);
+	std::cout << "Starting server @ " << Host << ":" << Port << std::endl;
 
 	while (!Dead)
 		Sleep.wait(SleepLock);

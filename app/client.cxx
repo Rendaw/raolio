@@ -532,8 +532,16 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 		Core->UpdateCallback = [=](MediaItem *Item) { CrossThread->Transfer([=](void) { PlaylistQTModel->AddUpdate(Item); }); };
 		Core->SelectCallback = [=](HashType const &MediaID)
 			{ CrossThread->Transfer([=](void) { Volition->Ack(); PlaylistQTModel->Select(MediaID); }); };
-		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void) { PlaylistQTModel->Play(); }); };
-		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void) { PlaylistQTModel->Stop(); }); };
+		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void) 
+		{ 
+			PlaylistQTModel->Play(); 
+			PlayStop->setText("Pause");
+		}); };
+		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void) 
+		{ 
+			PlaylistQTModel->Stop(); 
+			PlayStop->setText("Play");
+		}); };
 		Core->EndCallback = [=](void)
 		{
 			CrossThread->Transfer([=](void)
@@ -548,7 +556,7 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 
 		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [=](void)
 		{
-			//Core->Command(ChatEntry->text().toUtf8().data());
+			Core->Chat(ChatEntry->text().toUtf8().data());
 			ChatCursor->insertText(ChatEntry->text() + "\n");
 			ChatEntry->setText("");
 			ChatDisplay->setTextCursor(*ChatCursor);
@@ -583,14 +591,9 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 			{
 				for (auto File : Selected)
 				{
-					QCryptographicHash Hash(QCryptographicHash::Md5);
-					QFile OpenedFile(File);
-					OpenedFile.open(QFile::ReadOnly);
-					while (!OpenedFile.atEnd())
-						Hash.addData(OpenedFile.read(8192));
-					QByteArray HashBytes = Hash.result();
-					HashType HashArgument; std::copy(HashBytes.begin(), HashBytes.end(), HashArgument.begin());
-					Core->Add(HashArgument, File.toUtf8().data());
+					auto Hash = HashFile(File.toUtf8().data());
+					if (!Hash) continue; // TODO Warn?
+					Core->Add(Hash->first, File.toUtf8().data());
 				}
 			});
 			Dialog->show();

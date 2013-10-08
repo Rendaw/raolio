@@ -28,7 +28,9 @@ template <typename DataType> struct Optional
 	operator bool(void) const { return Valid; }
 	bool operator !(void) const { return !Valid; }
 	DataType &operator *(void) { Assert(Valid); return Data; }
+	DataType const &operator *(void) const { Assert(Valid); return Data; }
 	DataType *operator ->(void) { Assert(Valid); return &Data; }
+	DataType const *operator ->(void) const { Assert(Valid); return &Data; }
 	bool Valid;
 	DataType Data;
 };
@@ -48,8 +50,6 @@ struct CallTransferType
 	virtual void Transfer(std::function<void(void)> const &Call) = 0;
 	void operator ()(std::function<void(void)> const &Call);
 };
-
-std::string FormatHash(HashType const &Hash);
 
 #endif
 
