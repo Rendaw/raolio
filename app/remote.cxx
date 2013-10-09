@@ -3,14 +3,14 @@
 #include <condition_variable>
 #include <csignal>
 
-bool Dead = false;
+bool Die = false;
 std::mutex Mutex;
 std::condition_variable Sleep;
 
 int main(int argc, char **argv)
 {
 	std::unique_lock<std::mutex> SleepLock(Mutex);
-	std::signal(SIGINT, [](int) { std::cout << "Got SIGINT." << std::endl; std::lock_guard<std::mutex> Lock(Mutex); Dead = true; Sleep.notify_all(); });
+	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Die = true; Sleep.notify_all(); });
 
 	std::string Command;
 	int CommandIndex;
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 	Core Core;
 	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)
 	{
-#ifndef NDEBUG
+#ifdef NDEBUG
 		if (Priority >= Core::Debug) return;
 #endif
 		std::cout << Priority << ": " << Message << std::endl;
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 
 	std::cout << "Command issued.  Please wait until you are reasonably certain it has been sent and all subsequent actions have been completed to your satisfaction, then press ctrl+c to quit." << std::endl;
 
-	while (!Dead)
+	while (!Die)
 		Sleep.wait(SleepLock);
 
 	return 0;

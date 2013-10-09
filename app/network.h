@@ -2,6 +2,7 @@
 #define network_h
 
 #include "shared.h"
+#include "type.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -26,14 +27,14 @@ template <typename ConnectionType> struct Network
 			if (this->Socket < 0)
 			{
 				this->Socket = socket(AF_INET, SOCK_STREAM, 0);
-				if (this->Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
+				if (this->Socket < 0) throw ConstructionError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
 				sockaddr_in AddressInfo{};
 				AddressInfo.sin_family = AF_INET;
 				AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
 				AddressInfo.sin_port = htons(Port);
 
 				if (connect(this->Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-					throw SystemError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
+					throw ConstructionError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
 			}
 
 			WriteWatcher.Initialize(this->Socket);
@@ -69,10 +70,10 @@ template <typename ConnectionType> struct Network
 				Protocol::SubVector<uint8_t> Read(size_t Length, size_t Offset = 0)
 				{
 					assert(Socket >= 0);
-					if (Length <= Buffer.size()) return {Buffer, Offset, Length};
-					auto const Difference = Length - Buffer.size();
+					if (Offset + Length <= Buffer.size()) return {Buffer, Offset, Length};
+					auto const Difference = Offset + Length - Buffer.size();
 					auto const OriginalLength = Buffer.size();
-					Buffer.resize(Length);
+					Buffer.resize(Offset + Length);
 					int Count = read(Socket, &Buffer[OriginalLength], Difference);
 					if (Count <= 0) { Buffer.resize(OriginalLength); return {}; }
 					if (Count < Difference) { Buffer.resize(OriginalLength + Count); return {}; }
@@ -120,15 +121,15 @@ template <typename ConnectionType> struct Network
 		Listener(std::string const &Host, uint16_t Port) : Host{Host}, Port{Port}
 		{
 			Socket = socket(AF_INET, SOCK_STREAM, 0);
-			if (Socket < 0) throw SystemError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
+			if (Socket < 0) throw ConstructionError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
 			sockaddr_in AddressInfo{};
 			AddressInfo.sin_family = AF_INET;
 			AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
 			AddressInfo.sin_port = htons(Port);
 
 			if (bind(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-				throw SystemError() << "Failed to bind (" << Host << ":" << Port << "): " << strerror(errno);
-			if (listen(Socket, 2) == -1) throw SystemError() << "Failed to listen on (" << Port << "): " << strerror(errno);
+				throw ConstructionError() << "Failed to bind (" << Host << ":" << Port << "): " << strerror(errno);
+			if (listen(Socket, 2) == -1) throw ConstructionError() << "Failed to listen on (" << Port << "): " << strerror(errno);
 		}
 
 		~Listener(void) { assert(Socket >= 0); close(Socket); }
@@ -270,7 +271,11 @@ template <typename ConnectionType> struct Network
 			{
 				auto ReadWatcher = new EVData<ev_io>([&](EVData<ev_io> *)
 				{
-					Reader.Read(Socket.ReadBuffer, Socket);
+					bool Result = Reader.Read(Socket.ReadBuffer, Socket);
+					if (!Result)
+					{
+						std::cout << "::REND:: failed to read." << std::endl;
+					}
 					// Ignore errors?
 				});
 				IOCallbacks.emplace_back(ReadWatcher);
@@ -281,7 +286,7 @@ template <typename ConnectionType> struct Network
 			EVData<ev_async> AsyncOpenData([&](EVData<ev_async> *)
 			{
 				/// Exit loop if dying
-				if (This->Die) { std::cout << "Got die." << std::endl; ev_break(EVLoop); return; }
+				if (This->Die) { ev_break(EVLoop); return; }
 
 				while (true)
 				{
@@ -294,18 +299,20 @@ template <typename ConnectionType> struct Network
 					auto Directive = This->OpenQueue.front();
 					This->OpenQueue.pop();
 					This->Mutex.unlock();
-
+					
 					if (Directive.Listen)
 					{
 						Listener *Socket = nullptr;
-						try { auto Socket = new Listener{Directive.Host, Directive.Port}; }
-						catch (SystemError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
+						try { Socket = new Listener{Directive.Host, Directive.Port}; }
+						catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						Listeners.emplace_back(Socket);
 
 						auto ListenerData = new EVData<ev_io>([&, Socket](EVData<ev_io> *)
 						{
-							auto ConnectionInfo = Socket->Accept(CreateConnection, EVLoop);
-							if (!ConnectionInfo) return;
+							ConnectionType *ConnectionInfo;
+							try { ConnectionInfo = Socket->Accept(CreateConnection, EVLoop); }
+							catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(String() << "Failed to accept connection on " << Socket->Host << ":" << Socket->Port); return; }
+							assert(ConnectionInfo);
 							std::lock_guard<std::mutex> Lock(This->Mutex);
 							This->Connections.push_back(std::unique_ptr<ConnectionType>{ConnectionInfo});
 							CreateConnectionWatcher(*ConnectionInfo);
@@ -317,8 +324,8 @@ template <typename ConnectionType> struct Network
 					else
 					{
 						ConnectionType *Socket = nullptr;
-						try { auto Socket = CreateConnection(Directive.Host, Directive.Port, -1, EVLoop); }
-						catch (SystemError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
+						try { Socket = CreateConnection(Directive.Host, Directive.Port, -1, EVLoop); }
+						catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						This->Connections.emplace_back(Socket);
 						CreateConnectionWatcher(*Socket);
 					}
@@ -326,6 +333,7 @@ template <typename ConnectionType> struct Network
 			});
 			ev_async_init(&AsyncOpenData, EVData<ev_async>::PreCallback);
 			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, &AsyncOpenData); };
+			ev_async_start(EVLoop, &AsyncOpenData);
 
 			EVData<ev_async> AsyncTransferData([&](EVData<ev_async> *)
 			{
@@ -346,6 +354,7 @@ template <typename ConnectionType> struct Network
 			});
 			ev_async_init(&AsyncTransferData, EVData<ev_async>::PreCallback);
 			This->NotifyTransfer = [&](void) { ev_async_send(EVLoop, &AsyncTransferData); };
+			ev_async_start(EVLoop, &AsyncTransferData);
 
 			EVData<ev_async> AsyncScheduleData([&](EVData<ev_async> *)
 			{
@@ -381,6 +390,7 @@ template <typename ConnectionType> struct Network
 			});
 			ev_async_init(&AsyncScheduleData, EVData<ev_async>::PreCallback);
 			This->NotifySchedule = [&](void) { ev_async_send(EVLoop, &AsyncScheduleData); };
+			ev_async_start(EVLoop, &AsyncScheduleData);
 
 			if (TimerPeriod)
 			{

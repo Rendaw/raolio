@@ -68,6 +68,9 @@ void FilePieces::Set(uint64_t Index)
 		Got = !Got;
 	}
 	Runs.swap(NewRuns);
+	std::cout << "New runs:";
+	for (auto Length : Runs) std::cout << " " << Length;
+	std::cout << std::endl;
 }
 
 CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) :
@@ -125,6 +128,7 @@ void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, uint64_t cons
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Preparing " << FormatHash(MediaID) << " size " << Size);
 	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Size);
 	PendingRequests.emplace(MediaID, Size);
+	RequestNext();
 }
 
 void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From)
@@ -183,12 +187,12 @@ void CoreConnection::Handle(NP1V1Chat, std::string const &Message)
 bool CoreConnection::RequestNext(void)
 {
 	if (PendingRequests.empty()) return false;
-	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sending " << FormatHash(Response.ID) << " chunk " << Response.Chunk);
 	Request.ID = PendingRequests.front().ID;
 	Request.Size = PendingRequests.front().Size;
 	Request.Pieces = {};
 	Request.Path = Parent.TempPath / FormatHash(Request.ID);
 	Request.File.open(Request.Path, std::fstream::out);
+	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
 	Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 	PendingRequests.pop();
 	return true;
@@ -202,6 +206,7 @@ Core::Core(void) :
 		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
 		[this](std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) // Create connection
 		{
+			if (LogCallback) LogCallback(Unimportant, String() << "Connected to " << Host << ":" << Port);
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
 				Out->Announce.emplace(Item.first, Item.second.Size);

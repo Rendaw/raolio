@@ -1,6 +1,7 @@
 #include "hash.h"
 
 #include <boost/filesystem/fstream.hpp>
+#include <iomanip>
 
 extern "C"
 {

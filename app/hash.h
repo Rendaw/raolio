@@ -2,6 +2,7 @@
 #define hash_h
 
 #include "shared.h"
+#include "type.h"
 #include <boost/filesystem.hpp>
 
 namespace bfs = boost::filesystem;
