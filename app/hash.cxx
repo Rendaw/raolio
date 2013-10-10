@@ -19,17 +19,17 @@ std::string FormatHash(HashType const &Hash)
 Optional<HashType> UnformatHash(char const *String)
 {
 	HashType Hash;
-	for (size_t Position = 0; Position < Hash.size(); Position += 2)
+	for (size_t Position = 0; Position < Hash.size() * 2; Position += 2)
 	{
-		if ((String[Position] < 'a') || 
-			(String[Position] > 'z') || 
-			(String[Position + 1] < 'a') ||
-			(String[Position + 1] > 'z'))
-			return {};
-		
-		Hash[Hash.size() - 1 - Position] = 
-			(String[Position] - 'a') << 4 |
-			(String[Position + 1] - 'a');
+		char const First = String[Position];
+		if ((First >= 'a') && (First <= 'z')) Hash[Position / 2] = (First - 'a' + 10) << 4;
+		else if ((First >= '0') && (First <= '9')) Hash[Position / 2] = (First - '0') << 4;
+		else return {};
+
+		char const Second = String[Position + 1];
+		if ((Second >= 'a') && (Second <= 'z')) Hash[Position / 2] |= (Second - 'a' + 10);
+		else if ((Second >= '0') && (Second <= '9')) Hash[Position / 2] |= (Second - '0');
+		else return {};
 	}
 	return Hash;
 }
@@ -43,7 +43,7 @@ Optional<std::pair<HashType, size_t>> HashFile(bfs::path const &Path)
 
 	cvs_MD5Context Context;
 	cvs_MD5Init(&Context);
-	
+
 	std::vector<uint8_t> Buffer(8192);
 	while (File)
 	{

@@ -5,9 +5,9 @@
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
-	if (!VLC) throw SystemError() << "Could not initialize libVLC.";
+	if (!VLC) throw ConstructionError() << "Could not initialize libVLC.";
 	VLCMediaPlayer = libvlc_media_player_new(VLC);
-	if (!VLCMediaPlayer) throw SystemError() << "Could not initialice libVLC media player.";
+	if (!VLCMediaPlayer) throw ConstructionError() << "Could not initialice libVLC media player.";
 }
 
 EngineWrapper::~EngineWrapper(void)
@@ -27,9 +27,18 @@ MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
 ExtraScopeItem::~ExtraScopeItem(void) {}
 
-ClientCore::ClientCore(std::string const &Host, uint16_t Port) : CallTransfer(Parent), Playing{nullptr}
+ClientCore::ClientCore(void) : CallTransfer(Parent), Playing{nullptr}
 {
 	libvlc_event_attach(libvlc_media_player_event_manager(Engine.VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
+
+	Parent.LogCallback = [this](Core::LogPriority Priority, std::string const &Message)
+	{
+#ifdef NDEBUG
+		if (Priority >= Core::Debug) return;
+#endif
+		//if (LogCallback) LogCallback(Message);
+		std::cout << "Log: " << Message << std::endl;
+	};
 
 	Parent.ChatCallback = [this](std::string const &Message) { if (LogCallback) LogCallback(Message); };
 	Parent.AddCallback = [this](HashType const &Hash, bfs::path const &Filename)
@@ -40,15 +49,16 @@ ClientCore::ClientCore(std::string const &Host, uint16_t Port) : CallTransfer(Pa
 		{ auto const Now = GetNow(); PlayInternal(MediaID, MediaTime, SystemTime, Now); };
 	Parent.StopCallback = [this](void)
 		{ StopInternal(); };
-
-	Parent.Open(false, Host, Port);
 }
 
-void ClientCore::Add(HashType const &Hash, bfs::path const &Filename)
+void ClientCore::Open(bool Listen, std::string const &Host, uint16_t Port)
+	{ Parent.Open(false, Host, Port); }
+
+void ClientCore::Add(HashType const &Hash, size_t Size, bfs::path const &Filename)
 {
 	CallTransfer([&, Hash, Filename](void)
 	{
-		Parent.Add(Hash, Filename);
+		Parent.Add(Hash, Size, Filename);
 		AddInternal(Hash, Filename);
 	});
 }
@@ -103,6 +113,7 @@ void ClientCore::AddInternal(HashType const &Hash, bfs::path const &Filename)
 	if (!VLCMedia)
 	{
 		if (LogCallback) LogCallback(String() << "Failed to open selected media, " << Filename << "; Removing from playlist.");
+		// TODO remove from playlist
 		return;
 	}
 
@@ -119,6 +130,10 @@ void ClientCore::AddInternal(HashType const &Hash, bfs::path const &Filename)
 	Item->Title = ExtractMeta(VLCMedia, libvlc_meta_Title, Filename.filename().string());
 
 	if (AddCallback) AddCallback(Item);
+
+	Core::PlayStatus LastPlayStatus = Parent.GetPlayStatus();
+	if (LastPlayStatus.Playing && (Hash == LastPlayStatus.MediaID))
+		PlayInternal(LastPlayStatus.MediaID, LastPlayStatus.MediaTime, LastPlayStatus.SystemTime, GetNow());
 }
 
 void ClientCore::SetVolumeInternal(float Volume) { libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100)); }
@@ -141,24 +156,26 @@ void ClientCore::PlayInternal(HashType const &MediaID, uint64_t Position, uint64
 	libvlc_media_player_set_media(Engine.VLCMediaPlayer, Media->second->VLCMedia);
 	if (SelectCallback) SelectCallback(MediaID);
 	auto const Delay = SystemTime - Now;
+	std::cout << "::REND:: Now is " << Now << ", play at " << SystemTime << std::endl;
 	if (Now >= SystemTime)
 	{
-		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position + Now - SystemTime);
+		std::cout << "::REND:: starting from " << (Position + (Now - SystemTime)) << std::endl;
 		libvlc_media_player_play(Engine.VLCMediaPlayer);
+		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position + (Now - SystemTime));
 		if (PlayCallback) PlayCallback();
 	}
 	else if (Position > Delay)
 	{
-		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position - Delay);
 		libvlc_media_player_play(Engine.VLCMediaPlayer);
+		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position - Delay);
 		if (PlayCallback) PlayCallback();
 	}
 	else
 	{
-		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position);
-		Parent.Schedule((float)(Delay /* - Epsilon */) / 1000.0f, [this](void)
+		Parent.Schedule((float)(Delay /* - Epsilon */) / 1000.0f, [this, Position](void)
 		{
 			libvlc_media_player_play(Engine.VLCMediaPlayer);
+			libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position);
 			if (PlayCallback) PlayCallback();
 		});
 	}

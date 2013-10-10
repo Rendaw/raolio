@@ -5,9 +5,10 @@ local SharedObjects = Define.Objects
 		:Include 'core.cxx'
 		:Include 'hash.cxx'
 		:Include 'md5.c'
+		:Include 'network.cxx'
 }
 
---[[local icmbcMocOutputs = Define.Raw
+local icmbcMocOutputs = Define.Raw
 {
 	Inputs = Item 'qtaux.h',
 	Outputs = Item 'moc_qtaux.cxx',
@@ -23,7 +24,7 @@ icbmc = Define.Executable
 		:Include(icmbcMocOutputs),
 	Objects = SharedObjects,
 	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem -lev'
-}]]
+}
 
 icbms = Define.Executable
 {

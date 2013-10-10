@@ -500,7 +500,6 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 
 		struct PlayerDataType
 		{
-			PlayerDataType(std::string const &Host, uint16_t Port) : Core(Host, Port) {}
 			ClientCore Core;
 			PlaylistQTModel_Unique PlaylistQTModel;
 			struct
@@ -512,7 +511,7 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 				unsigned int Count = 2u;
 			} Volition;
 		};
-		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Host, Port));
+		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>());
 		auto Core = &PlayerData->Data->Core;
 		auto PlaylistQTModel = &PlayerData->Data->PlaylistQTModel;
 		auto Volition = &PlayerData->Data->Volition;
@@ -532,14 +531,14 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 		Core->UpdateCallback = [=](MediaItem *Item) { CrossThread->Transfer([=](void) { PlaylistQTModel->AddUpdate(Item); }); };
 		Core->SelectCallback = [=](HashType const &MediaID)
 			{ CrossThread->Transfer([=](void) { Volition->Ack(); PlaylistQTModel->Select(MediaID); }); };
-		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void) 
-		{ 
-			PlaylistQTModel->Play(); 
+		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void)
+		{
+			PlaylistQTModel->Play();
 			PlayStop->setText("Pause");
 		}); };
-		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void) 
-		{ 
-			PlaylistQTModel->Stop(); 
+		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void)
+		{
+			PlaylistQTModel->Stop();
 			PlayStop->setText("Play");
 		}); };
 		Core->EndCallback = [=](void)
@@ -593,7 +592,7 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 				{
 					auto Hash = HashFile(File.toUtf8().data());
 					if (!Hash) continue; // TODO Warn?
-					Core->Add(Hash->first, File.toUtf8().data());
+					Core->Add(Hash->first, Hash->second, File.toUtf8().data());
 				}
 			});
 			Dialog->show();
@@ -633,8 +632,10 @@ void OpenPlayer(std::string const &Host, uint16_t Port)
 		});
 
 		MainWindow->show();
+
+		Core->Open(false, Host, Port);
 	}
-	catch (SystemError const &Error)
+	catch (ConstructionError const &Error)
 	{
 		QMessageBox::warning(0, "Error during startup", ((std::string)Error).c_str());
 		OpenServerSelect();

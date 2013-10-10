@@ -67,20 +67,32 @@ void FilePieces::Set(uint64_t Index)
 		Position += Length;
 		Got = !Got;
 	}
+#ifndef NDEBUG
+	size_t OrigSize = 0;
+	for (auto Length : Runs) OrigSize += Length;
+	size_t NewSize = 0;
+	for (auto Length : NewRuns) NewSize += Length;
+	Assert(OrigSize, NewSize);
+#endif
 	Runs.swap(NewRuns);
-	std::cout << "New runs:";
-	for (auto Length : Runs) std::cout << " " << Length;
-	std::cout << std::endl;
 }
 
 CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) :
-	Network<CoreConnection>::Connection{Host, Port, Socket, EVLoop, this}, Parent(Parent)
+	Network<CoreConnection>::Connection{Host, Port, Socket, EVLoop, *this}, Parent(Parent), SentPlayState{false}
 {
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Established connection to " << Host << ":" << Port);
 }
 
 bool CoreConnection::IdleWrite(void)
 {
+	if (!SentPlayState)
+	{
+		// There could be a race condition with user play or incoming plays being double sent, but it shouldn't affect much
+		if (Parent.Last.Playing)
+			Send(NP1V1Play{}, Parent.Last.MediaID, Parent.Last.MediaTime, Parent.Last.SystemTime);
+		SentPlayState = true;
+	}
+
 	if (!Announce.empty())
 	{
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Announcing " << FormatHash(Announce.front().ID) << " size " << Announce.front().Size);
@@ -93,11 +105,19 @@ bool CoreConnection::IdleWrite(void)
 
 	if (Response.File.is_open() && !Response.File.eof())
 	{
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sending " << FormatHash(Response.ID) << " chunk " << Response.Chunk);
 		std::vector<uint8_t> Data(ChunkSize);
+		assert(Response.File.tellg() == Response.Chunk * ChunkSize);
 		Response.File.read((char *)&Data[0], Data.size());
-		Send(NP1V1Data{}, Response.ID, Response.Chunk++, Data);
-		if (!Response.File.eof()) return true;
+		size_t Read = Response.File.gcount();
+		if (Read > 0)
+		{
+			Data.resize(Read);
+			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
+			//if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
+			assert((Read == ChunkSize) || (Response.File.eof()));
+			++Response.Chunk;
+			if (!Response.File.eof()) return true;
+		}
 	}
 
 	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, "Nothing to idly write, stopping.");
@@ -147,34 +167,38 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 {
 	if (MediaID != Request.ID) return;
 	if (Chunk != Request.Pieces.Next()) return;
-	assert(Request.File);
-	assert(Request.File.tellp() == Chunk * ChunkSize);
-	if (Bytes.size() < ChunkSize || (Chunk * ChunkSize + Bytes.size() != Request.Size)) return; // Probably an error condition
+	Assert(Request.File);
+	Assert(Request.File.tellp(), Chunk * ChunkSize);
+	if ((Bytes.size() != ChunkSize) && (Chunk * ChunkSize + Bytes.size() != Request.Size)) return; // Probably an error condition
 	Request.Pieces.Set(Chunk);
-	Request.File.write((char const *)&Bytes[0], ChunkSize);
+	Request.File.write((char const *)&Bytes[0], Bytes.size());
 	Request.LastResponse = GetNow();
-	if (!Request.Pieces.Finished()) return;
+	if (Request.Pieces.Finished())
+	{
+		Request.File.close();
+		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path});
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Finished receiving " << FormatHash(Request.ID));
+		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path);
 
-	Request.File.close();
-	Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path});
-	if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path);
-
-	RequestNext();
+		RequestNext();
+	}
 }
 
 void CoreConnection::Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime)
 {
 	Parent.Net.Forward(NP1V1Play{}, *this, MediaID, MediaTime, SystemTime);
-	Parent.LastPlaying = true;
-	Parent.LastMediaTime = MediaTime;
-	Parent.LastSystemTime = SystemTime;
+	Parent.Last.Playing = true;
+	Parent.Last.MediaID = MediaID;
+	Parent.Last.MediaTime = MediaTime;
+	Parent.Last.SystemTime = SystemTime;
+	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Received play for " << FormatHash(MediaID) << ":" << MediaTime << " starting at " << SystemTime);
 	if (Parent.PlayCallback) Parent.PlayCallback(MediaID, MediaTime, SystemTime);
 }
 
 void CoreConnection::Handle(NP1V1Stop)
 {
 	Parent.Net.Forward(NP1V1Stop{}, *this);
-	Parent.LastPlaying = false;
+	Parent.Last.Playing = false;
 	if (Parent.StopCallback) Parent.StopCallback();
 }
 
@@ -189,9 +213,14 @@ bool CoreConnection::RequestNext(void)
 	if (PendingRequests.empty()) return false;
 	Request.ID = PendingRequests.front().ID;
 	Request.Size = PendingRequests.front().Size;
-	Request.Pieces = {};
+	Request.Pieces = {1 + ((Request.Size - 1) / ChunkSize)};
 	Request.Path = Parent.TempPath / FormatHash(Request.ID);
 	Request.File.open(Request.Path, std::fstream::out);
+	if (!Request.File)
+	{
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Could not create core library file " << Request.Path);
+		return false; // TODO Retry?  Pop and continue idle write?
+	}
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
 	Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 	PendingRequests.pop();
@@ -201,12 +230,12 @@ bool CoreConnection::RequestNext(void)
 Core::Core(void) :
 	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
 	ID{GeneratePUID()},
+	Last{false},
 	Net
 	{
 		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
 		[this](std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) // Create connection
 		{
-			if (LogCallback) LogCallback(Unimportant, String() << "Connected to " << Host << ":" << Port);
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
 				Out->Announce.emplace(Item.first, Item.second.Size);
@@ -240,11 +269,10 @@ void Core::Schedule(float Seconds, std::function<void(void)> const &Call)
 	Net.Schedule(Seconds, Call);
 }
 
-void Core::Add(HashType const &MediaID, bfs::path const &Path)
+void Core::Add(HashType const &MediaID, size_t Size, bfs::path const &Path)
 {
 	try
 	{
-		size_t Size = bfs::file_size(Path);
 		Library.emplace(MediaID, LibraryInfo{Size, Path});
 
 		for (auto &Connection : Net.GetConnections())
@@ -257,10 +285,22 @@ void Core::Add(HashType const &MediaID, bfs::path const &Path)
 }
 
 void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
-	{ Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime); }
+{
+	Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime);
+	Last.Playing = true;
+	Last.MediaID = MediaID;
+	Last.MediaTime = Position;
+	Last.SystemTime = SystemTime;
+}
 
 void Core::Stop(void)
-	{ Net.Broadcast(NP1V1Stop{}); }
+{
+	Net.Broadcast(NP1V1Stop{});
+	Last.Playing = false;
+}
 
 void Core::Chat(std::string const &Message)
 	{ Net.Broadcast(NP1V1Chat{}, Message); }
+
+Core::PlayStatus const &Core::GetPlayStatus(void) const
+	{ return Last; }

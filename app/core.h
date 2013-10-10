@@ -43,6 +43,8 @@ struct CoreConnection : Network<CoreConnection>::Connection
 {
 	Core &Parent;
 
+	bool SentPlayState;
+
 	struct MediaInfo
 	{
 		HashType ID;
@@ -94,6 +96,14 @@ struct CoreConnection : Network<CoreConnection>::Connection
 
 struct Core : CallTransferType
 {
+	struct PlayStatus
+	{
+		bool Playing;
+		HashType MediaID;
+		uint64_t MediaTime;
+		uint64_t SystemTime;
+	};
+
 	Core(void);
 	~Core(void);
 
@@ -103,10 +113,12 @@ struct Core : CallTransferType
 	void Schedule(float Seconds, std::function<void(void)> const &Call);
 
 	// Core thread only
-	void Add(HashType const &MediaID, bfs::path const &Path);
+	void Add(HashType const &MediaID, size_t Size, bfs::path const &Path);
 	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
 	void Stop(void);
 	void Chat(std::string const &Message);
+
+	PlayStatus const &GetPlayStatus(void) const;
 
 	// Callbacks
 	enum LogPriority { Important, Unimportant, Debug, Useless };
@@ -123,9 +135,7 @@ struct Core : CallTransferType
 		bfs::path const TempPath;
 		uint64_t const ID;
 
-		bool LastPlaying = false;
-		uint64_t LastMediaTime;
-		uint64_t LastSystemTime;
+		PlayStatus Last;
 
 		struct LibraryInfo
 		{

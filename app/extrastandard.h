@@ -31,6 +31,7 @@ template <typename Type> inline void AssertImplementation(char const *File, char
 	if (!Value)
 	{
 		AssertStamp(File, Function, Line);
+		std::cerr << "Value was " << (bool)Value << std::endl;
 		throw false;
 	}
 #endif
@@ -42,6 +43,7 @@ template <typename GotType, typename ExpectedType> inline void AssertImplementat
 	if (Got != Expected)
 	{
 		AssertStamp(File, Function, Line);
+		std::cerr << "Got '" << Got << "', expected '" << Expected << "'" << std::endl;
 		throw false;
 	}
 #endif

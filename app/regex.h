@@ -2,6 +2,7 @@
 #define regex_h
 
 #include "shared.h"
+#include "extrastandard.h"
 
 #include <regex>
 #include <cassert>

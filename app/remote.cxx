@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 			goto FullBreak;
 		}
 
-		Core.Transfer([&, Hash](void) { Core.Add(Hash->first, argv[CommandIndex + 1]); });
+		Core.Transfer([&, Hash](void) { Core.Add(Hash->first, Hash->second, argv[CommandIndex + 1]); });
 	}
 	else if (Command == "--play")
 	{
@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 		auto Hash = UnformatHash(argv[CommandIndex + 1]);
 		if (!Hash)
 		{
-			std::cerr << "Invalid hash provided for --add." << std::endl;
+			std::cerr << "Invalid hash provided for --play." << std::endl;
 			goto FullBreak;
 		}
 

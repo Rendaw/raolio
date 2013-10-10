@@ -56,7 +56,7 @@ struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
-	ClientCore(std::string const &Host, uint16_t Port);
+	ClientCore(void);
 
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(float Time)> SeekCallback;
@@ -67,7 +67,9 @@ struct ClientCore
 	std::function<void(void)> StopCallback;
 	std::function<void(void)> EndCallback;
 
-	void Add(HashType const &Hash, bfs::path const &Filename);
+	void Open(bool Listen, std::string const &Host, uint16_t Port);
+
+	void Add(HashType const &Hash, size_t Size, bfs::path const &Filename);
 
 	void SetVolume(float Volume);
 	void GetTime(void);
