@@ -23,13 +23,23 @@ template <typename DataType> struct Optional
 {
 	Optional(void) : Valid(false) {}
 	Optional(DataType const &Data) : Valid(true), Data(Data) {}
+	Optional &operator =(Optional<DataType> const &Other) { Valid = Other.Valid; if (Valid) Data = Other.Data; return *this; }
 	operator bool(void) const { return Valid; }
 	bool operator !(void) const { return !Valid; }
 	DataType &operator *(void) { Assert(Valid); return Data; }
 	DataType const &operator *(void) const { Assert(Valid); return Data; }
 	DataType *operator ->(void) { Assert(Valid); return &Data; }
 	DataType const *operator ->(void) const { Assert(Valid); return &Data; }
-	bool const Valid;
+	bool operator ==(Optional<DataType> const &Other) const
+		{ return (!Valid && !Other.Valid) || (Valid && Other.Valid && (Data == Other.Data)); }
+	bool operator <(Optional<DataType> const &Other) const
+	{
+		if (!Valid && !Other.Valid) return false;
+		if (Valid && Other.Valid) return Data < Other.Data;
+		if (!Other.Valid) return true;
+		return false;
+	}
+	bool Valid;
 	DataType Data;
 };
 

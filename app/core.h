@@ -17,7 +17,7 @@ DefineProtocol(NetProto1)
 
 DefineProtocolVersion(NP1V1, NetProto1)
 DefineProtocolMessage(NP1V1Clock, NP1V1, void(uint64_t InstanceID, uint64_t SystemTime))
-DefineProtocolMessage(NP1V1Prepare, NP1V1, void(HashType MediaID, uint64_t Size))
+DefineProtocolMessage(NP1V1Prepare, NP1V1, void(HashType MediaID, std::string Extension, uint64_t Size))
 DefineProtocolMessage(NP1V1Request, NP1V1, void(HashType MediaID, uint64_t From))
 DefineProtocolMessage(NP1V1Data, NP1V1, void(HashType MediaID, uint64_t Chunk, std::vector<uint8_t> Bytes))
 DefineProtocolMessage(NP1V1Play, NP1V1, void(HashType MediaID, uint64_t MediaTime, uint64_t SystemTime))
@@ -48,8 +48,9 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	struct MediaInfo
 	{
 		HashType ID;
+		std::string Extension;
 		uint64_t Size;
-		MediaInfo(HashType const &ID, uint64_t const &Size) : ID(ID), Size{Size} {}
+		MediaInfo(HashType const &ID, std::string const &Extension, uint64_t const &Size) : ID(ID), Extension{Extension}, Size{Size} {}
 	};
 
 	std::queue<MediaInfo> Announce;
@@ -64,12 +65,6 @@ struct CoreConnection : Network<CoreConnection>::Connection
 		bfs::fstream File;
 	} Request;
 	std::queue<MediaInfo> PendingRequests;
-	struct FinishedMedia
-	{
-		HashType ID;
-		uint64_t Size;
-		bfs::path Path;
-	};
 
 	struct
 	{
@@ -84,7 +79,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 
 	void HandleTimer(uint64_t const &Now);
 	void Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t const &SystemTime);
-	void Handle(NP1V1Prepare, HashType const &MediaID, uint64_t const &Size);
+	void Handle(NP1V1Prepare, HashType const &MediaID, std::string const &Extension, uint64_t const &Size);
 	void Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From);
 	void Handle(NP1V1Data, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes);
 	void Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime);
@@ -104,7 +99,7 @@ struct Core : CallTransferType
 		uint64_t SystemTime;
 	};
 
-	Core(void);
+	Core(bool PruneOldItems);
 	~Core(void);
 
 	// Any thread
@@ -132,8 +127,13 @@ struct Core : CallTransferType
 
 	private:
 		friend struct CoreConnection;
+
+		void PruneLibrary(uint64_t const &Now);
+
 		bfs::path const TempPath;
 		uint64_t const ID;
+
+		bool const Prune;
 
 		PlayStatus Last;
 
@@ -141,7 +141,8 @@ struct Core : CallTransferType
 		{
 			uint64_t Size;
 			bfs::path Path;
-			LibraryInfo(uint64_t Size, bfs::path const &Path) : Size{Size}, Path{Path} {}
+			uint64_t Created;
+			LibraryInfo(uint64_t Size, bfs::path const &Path, uint64_t const &Created) : Size{Size}, Path{Path}, Created{Created} {}
 		};
 		std::map<HashType, LibraryInfo> Library;
 

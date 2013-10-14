@@ -16,7 +16,7 @@ int main(int argc, char **argv)
 	uint16_t Port{20578};
 	if (argc >= 2) Host = argv[1];
 	if (argc >= 3) String(argv[2]) >> Port;
-	Core Core;
+	Core Core{true};
 	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)
 	{
 #ifdef NDEBUG

@@ -7,14 +7,16 @@
 
 struct String
 {
+	private:
+		std::stringstream Buffer;
+	public:
+
 	String(void) {}
 	String(std::string const &Initial) : Buffer(Initial) {}
 	template <typename Whatever> String &operator <<(Whatever const &Input) { Buffer << Input; return *this; }
 	template <typename Whatever> String &operator >>(Whatever &Output) { Buffer >> Output; return *this; }
+	decltype(Buffer.str()) str(void) const { return Buffer.str(); }
 	operator std::string(void) const { return Buffer.str(); }
-
-	private:
-		std::stringstream Buffer;
 };
 
 // Will be included in C++14 lolololol

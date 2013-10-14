@@ -23,21 +23,33 @@ static std::string ExtractMeta(libvlc_media_t *Media, libvlc_meta_t const &MetaI
 	return Out;
 }
 
+static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
+{
+	String TrackExtractor(ExtractMeta(Media, libvlc_meta_TrackNumber));
+	int16_t Track = -1;
+	TrackExtractor >> Track;
+	if (Track >= 0) Out.Track = Track;
+	else Out.Track = {};
+	Out.Artist = ExtractMeta(Media, libvlc_meta_Artist);
+	Out.Album = ExtractMeta(Media, libvlc_meta_Album);
+	Out.Title = ExtractMeta(Media, libvlc_meta_Title);
+}
+
+MediaItem::MediaItem(HashType const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
+
 MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
-ExtraScopeItem::~ExtraScopeItem(void) {}
-
-ClientCore::ClientCore(void) : CallTransfer(Parent), Playing{nullptr}
+ClientCore::ClientCore(std::string const &Handle, float Volume) : CallTransfer(Parent), Parent{false}, Playing{nullptr}, Handle{Handle}
 {
 	libvlc_event_attach(libvlc_media_player_event_manager(Engine.VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
+	libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100));
 
 	Parent.LogCallback = [this](Core::LogPriority Priority, std::string const &Message)
 	{
 #ifdef NDEBUG
 		if (Priority >= Core::Debug) return;
 #endif
-		//if (LogCallback) LogCallback(Message);
-		std::cout << "Log: " << Message << std::endl;
+		if (LogCallback) LogCallback(Message);
 	};
 
 	Parent.ChatCallback = [this](std::string const &Message) { if (LogCallback) LogCallback(Message); };
@@ -56,7 +68,7 @@ void ClientCore::Open(bool Listen, std::string const &Host, uint16_t Port)
 
 void ClientCore::Add(HashType const &Hash, size_t Size, bfs::path const &Filename)
 {
-	CallTransfer([&, Hash, Filename](void)
+	CallTransfer([=](void)
 	{
 		Parent.Add(Hash, Size, Filename);
 		AddInternal(Hash, Filename);
@@ -64,17 +76,17 @@ void ClientCore::Add(HashType const &Hash, size_t Size, bfs::path const &Filenam
 }
 
 void ClientCore::SetVolume(float Volume)
-	{ CallTransfer([&, Volume](void) { SetVolumeInternal(Volume); }); }
+	{ CallTransfer([=](void) { SetVolumeInternal(Volume); }); }
 
 void ClientCore::GetTime(void)
-	{ CallTransfer([&](void) { if (SeekCallback) SeekCallback(GetTimeInternal()); }); }
+	{ CallTransfer([=](void) { if (SeekCallback) SeekCallback(GetTimeInternal()); }); }
 
 void ClientCore::Play(HashType const &MediaID, uint64_t Position)
-	{ CallTransfer([&, MediaID, Position](void) { LocalPlayInternal(MediaID, Position); }); }
+	{ CallTransfer([=](void) { LocalPlayInternal(MediaID, Position); }); }
 
 void ClientCore::Play(HashType const &MediaID, float Position)
 {
-	CallTransfer([&, MediaID, Position](void)
+	CallTransfer([=](void)
 	{
 		auto Media = MediaLookup.find(MediaID);
 		if (Media == MediaLookup.end()) return;
@@ -97,9 +109,13 @@ void ClientCore::Stop(void)
 	{ CallTransfer([&](void) { LocalStopInternal(); }); }
 
 void ClientCore::Chat(std::string const &Message)
-	{ CallTransfer([&](void) { Parent.Chat(Message); }); }
+{
+	std::string QualifiedMessage = Handle + ": " + Message;
+	CallTransfer([=](void) { Parent.Chat(QualifiedMessage); });
+	if (LogCallback) LogCallback(QualifiedMessage);
+}
 
-struct VLCParsedUserData : ExtraScopeItem
+struct VLCParsedUserData
 {
 	VLCParsedUserData(ClientCore &Core, HashType const &Hash) : Core(Core), Hash(Hash) {}
 	ClientCore &Core;
@@ -117,19 +133,18 @@ void ClientCore::AddInternal(HashType const &Hash, bfs::path const &Filename)
 		return;
 	}
 
-	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, VLCMedia};
+	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, {}, VLCMedia};
 	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
 
-	auto CallbackData = new VLCParsedUserData{*this, Hash};
-	ExtraScope.push_back(std::unique_ptr<ExtraScopeItem>{CallbackData});
-	libvlc_event_attach(libvlc_media_event_manager(VLCMedia), libvlc_MediaParsedChanged, VLCMediaParsedCallback, CallbackData);
-	libvlc_media_parse_async(VLCMedia);
+	if (libvlc_media_is_parsed(VLCMedia))
+		ExtractAllMeta(*Item, VLCMedia);
+	else
+	{
+		libvlc_event_attach(libvlc_media_event_manager(VLCMedia), libvlc_MediaParsedChanged, VLCMediaParsedCallback, new VLCParsedUserData{*this, Hash});
+		libvlc_media_parse_async(VLCMedia);
+	}
 
-	Item->Artist = ExtractMeta(VLCMedia, libvlc_meta_Artist);
-	Item->Album = ExtractMeta(VLCMedia, libvlc_meta_Album);
-	Item->Title = ExtractMeta(VLCMedia, libvlc_meta_Title, Filename.filename().string());
-
-	if (AddCallback) AddCallback(Item);
+	if (AddCallback) AddCallback(*Item);
 
 	Core::PlayStatus LastPlayStatus = Parent.GetPlayStatus();
 	if (LastPlayStatus.Playing && (Hash == LastPlayStatus.MediaID))
@@ -154,12 +169,11 @@ void ClientCore::PlayInternal(HashType const &MediaID, uint64_t Position, uint64
 	auto Media = MediaLookup.find(MediaID);
 	if (Media == MediaLookup.end()) return;
 	libvlc_media_player_set_media(Engine.VLCMediaPlayer, Media->second->VLCMedia);
+	float StartTime = static_cast<float>(Position) / libvlc_media_player_get_length(Engine.VLCMediaPlayer);
 	if (SelectCallback) SelectCallback(MediaID);
 	auto const Delay = SystemTime - Now;
-	std::cout << "::REND:: Now is " << Now << ", play at " << SystemTime << std::endl;
 	if (Now >= SystemTime)
 	{
-		std::cout << "::REND:: starting from " << (Position + (Now - SystemTime)) << std::endl;
 		libvlc_media_player_play(Engine.VLCMediaPlayer);
 		libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position + (Now - SystemTime));
 		if (PlayCallback) PlayCallback();
@@ -172,7 +186,7 @@ void ClientCore::PlayInternal(HashType const &MediaID, uint64_t Position, uint64
 	}
 	else
 	{
-		Parent.Schedule((float)(Delay /* - Epsilon */) / 1000.0f, [this, Position](void)
+		Parent.Schedule((float)(Delay /* - Epsilon */) / 1000.0f, [this, Position, StartTime](void)
 		{
 			libvlc_media_player_play(Engine.VLCMediaPlayer);
 			libvlc_media_player_set_time(Engine.VLCMediaPlayer, Position);
@@ -205,14 +219,12 @@ void ClientCore::VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData
 void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData)
 {
 	auto Data = static_cast<VLCParsedUserData *>(UserData);
-	auto &This = Data->Core;
-	This.CallTransfer([&This, Data](void)
+	Data->Core.CallTransfer([Data](void)
 	{
-		auto Media = This.MediaLookup.find(Data->Hash);
-		if (Media == This.MediaLookup.end()) return;
-		Media->second->Artist = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Artist);
-		Media->second->Album = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Album);
-		Media->second->Title = ExtractMeta(Media->second->VLCMedia, libvlc_meta_Title);
-		if (This.UpdateCallback) This.UpdateCallback(Media->second.get());
+		auto Media = Data->Core.MediaLookup.find(Data->Hash);
+		if (Media == Data->Core.MediaLookup.end()) return;
+		ExtractAllMeta(*Media->second, Media->second->VLCMedia);
+		if (Data->Core.UpdateCallback) Data->Core.UpdateCallback(*Media->second.get());
+		delete Data;
 	});
 }

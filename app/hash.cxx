@@ -49,11 +49,11 @@ Optional<std::pair<HashType, size_t>> HashFile(bfs::path const &Path)
 	{
 		File.read((char *)&Buffer[0], Buffer.size());
 		size_t Read = File.gcount();
-		if (Read == 0) break;
+		if (Read <= 0) break;
 		Size += Read;
 		cvs_MD5Update(&Context, &Buffer[0], Read);
 	}
-	HashType Hash;
+	HashType Hash{0};
 	cvs_MD5Final(&Hash[0], &Context);
 	return std::make_pair(Hash, Size);
 }

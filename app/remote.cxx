@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 			String(argv[2]) >> Port;
 	}
 
-	Core Core;
+	Core Core{true};
 	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)
 	{
 #ifdef NDEBUG

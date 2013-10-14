@@ -1,5 +1,7 @@
 #include "core.h"
 
+#include <random>
+
 uint64_t GeneratePUID(void) // Probably Unique ID
 {
 	std::mt19937 Random;
@@ -59,7 +61,7 @@ void FilePieces::Set(uint64_t Index)
 		}
 		else
 		{
-			assert(!Extend || (Got == Extend));
+			Assert(!Extend || (Got == Extend));
 			if (Got && Extend)
 				NewRuns.back() += Length;
 			else NewRuns.push_back(Length);
@@ -96,7 +98,7 @@ bool CoreConnection::IdleWrite(void)
 	if (!Announce.empty())
 	{
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Announcing " << FormatHash(Announce.front().ID) << " size " << Announce.front().Size);
-		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Size);
+		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Extension, Announce.front().Size);
 		Announce.pop();
 		return true;
 	}
@@ -106,7 +108,7 @@ bool CoreConnection::IdleWrite(void)
 	if (Response.File.is_open() && !Response.File.eof())
 	{
 		std::vector<uint8_t> Data(ChunkSize);
-		assert(Response.File.tellg() == Response.Chunk * ChunkSize);
+		Assert(Response.File.tellg(), Response.Chunk * ChunkSize);
 		Response.File.read((char *)&Data[0], Data.size());
 		size_t Read = Response.File.gcount();
 		if (Read > 0)
@@ -114,7 +116,7 @@ bool CoreConnection::IdleWrite(void)
 			Data.resize(Read);
 			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
 			//if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
-			assert((Read == ChunkSize) || (Response.File.eof()));
+			Assert((Read == ChunkSize) || (Response.File.eof()));
 			++Response.Chunk;
 			if (!Response.File.eof()) return true;
 		}
@@ -141,14 +143,15 @@ void CoreConnection::Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t con
 	if (Parent.ClockCallback) Parent.ClockCallback(InstanceID, SystemTime);
 }
 
-void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, uint64_t const &Size)
+void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, std::string const &Extension, uint64_t const &Size)
 {
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Preparing " << FormatHash(MediaID) << " size " << Size);
-	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Size);
-	PendingRequests.emplace(MediaID, Size);
-	RequestNext();
+	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Extension, Size);
+	PendingRequests.emplace(MediaID, Extension, Size);
+	if (Request.Pieces.Finished())
+		RequestNext();
 }
 
 void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From)
@@ -156,7 +159,10 @@ void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t cons
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
 	if (!Response.File.is_open() || (MediaID != Response.ID))
+	{
+		if (Response.File.is_open()) Response.File.close();
 		Response.File.open(Out->second.Path, std::fstream::in);
+	}
 	Response.File.seekg(From * ChunkSize);
 	Response.ID = MediaID;
 	Response.Chunk = From;
@@ -176,7 +182,9 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 	if (Request.Pieces.Finished())
 	{
 		Request.File.close();
-		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path});
+		auto Now = GetNow();
+		Parent.PruneLibrary(Now);
+		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path, GetNow()});
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Finished receiving " << FormatHash(Request.ID));
 		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path);
 
@@ -210,26 +218,40 @@ void CoreConnection::Handle(NP1V1Chat, std::string const &Message)
 
 bool CoreConnection::RequestNext(void)
 {
-	if (PendingRequests.empty()) return false;
-	Request.ID = PendingRequests.front().ID;
-	Request.Size = PendingRequests.front().Size;
-	Request.Pieces = {1 + ((Request.Size - 1) / ChunkSize)};
-	Request.Path = Parent.TempPath / FormatHash(Request.ID);
-	Request.File.open(Request.Path, std::fstream::out);
-	if (!Request.File)
+	while (!PendingRequests.empty())
 	{
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Could not create core library file " << Request.Path);
-		return false; // TODO Retry?  Pop and continue idle write?
+		{
+			auto Found = Parent.Library.find(PendingRequests.front().ID);
+			if (Found != Parent.Library.end())
+			{
+				PendingRequests.pop();
+				continue;
+			}
+		}
+		Request.ID = PendingRequests.front().ID;
+		Request.Size = PendingRequests.front().Size;
+		Request.Pieces = {1 + ((Request.Size - 1) / ChunkSize)};
+		Request.Path = Parent.TempPath / (FormatHash(Request.ID) + PendingRequests.front().Extension);
+		if (Request.File.is_open()) Request.File.close();
+		Request.File.open(Request.Path, std::fstream::out);
+		if (!Request.File)
+		{
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Could not create core library file " << Request.Path);
+			PendingRequests.pop();
+			continue;
+		}
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
+		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
+		PendingRequests.pop();
+		return true;
 	}
-	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
-	Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
-	PendingRequests.pop();
-	return true;
+	return false;
 }
 
-Core::Core(void) :
+Core::Core(bool PruneOldItems) :
 	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
 	ID{GeneratePUID()},
+	Prune{PruneOldItems},
 	Last{false},
 	Net
 	{
@@ -238,7 +260,7 @@ Core::Core(void) :
 		{
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
-				Out->Announce.emplace(Item.first, Item.second.Size);
+				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size);
 			return Out;
 		},
 		10.0f
@@ -273,11 +295,13 @@ void Core::Add(HashType const &MediaID, size_t Size, bfs::path const &Path)
 {
 	try
 	{
-		Library.emplace(MediaID, LibraryInfo{Size, Path});
+		auto Now = GetNow();
+		PruneLibrary(Now);
+		Library.emplace(MediaID, LibraryInfo{Size, Path, Now});
 
 		for (auto &Connection : Net.GetConnections())
 		{
-			Connection->Announce.emplace(MediaID, Size);
+			Connection->Announce.emplace(MediaID, Path.extension().string(), Size);
 			Connection->WakeIdleWrite();
 		}
 	}
@@ -304,3 +328,17 @@ void Core::Chat(std::string const &Message)
 
 Core::PlayStatus const &Core::GetPlayStatus(void) const
 	{ return Last; }
+
+void Core::PruneLibrary(uint64_t const &Now)
+{
+	if (!Prune) return;
+	for (auto Item = Library.begin(); Item != Library.end(); )
+	{
+		if (Now - Item->second.Created > 1000 * 60 * 60)
+		{
+			bfs::remove(Item->second.Path);
+			Item = Library.erase(Item);
+		}
+		else ++Item;
+	}
+}

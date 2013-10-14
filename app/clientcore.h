@@ -26,7 +26,7 @@ struct LatencyTracker
 	}
 
 	private:
-		uint64_t Max;
+		uint64_t Max = 0;
 };
 
 struct EngineWrapper
@@ -38,30 +38,34 @@ struct EngineWrapper
 	libvlc_media_player_t *VLCMediaPlayer;
 };
 
-struct MediaItem
+struct MediaInfo
 {
 	HashType Hash;
 	bfs::path Filename;
+	Optional<uint16_t> Track;
 	std::string Artist;
 	std::string Album;
 	std::string Title;
+};
 
+struct MediaItem : MediaInfo
+{
 	libvlc_media_t *VLCMedia;
 
+	MediaItem(HashType const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
 	~MediaItem(void);
 };
 
-struct ExtraScopeItem { virtual ~ExtraScopeItem(void); };
 struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
-	ClientCore(void);
+	ClientCore(std::string const &Handle, float Volume);
 
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(float Time)> SeekCallback;
-	std::function<void(MediaItem *Item)> AddCallback;
-	std::function<void(MediaItem *Item)> UpdateCallback;
+	std::function<void(MediaInfo Item)> AddCallback;
+	std::function<void(MediaInfo Item)> UpdateCallback;
 	std::function<void(HashType const &MediaID)> SelectCallback;
 	std::function<void(void)> PlayCallback;
 	std::function<void(void)> StopCallback;
@@ -106,9 +110,9 @@ struct ClientCore
 		std::map<HashType, std::unique_ptr<MediaItem>> MediaLookup;
 		MediaItem *Playing;
 
-		std::vector<std::unique_ptr<ExtraScopeItem>> ExtraScope;
-
 		LatencyTracker Latencies;
+
+		std::string const Handle;
 };
 
 #endif

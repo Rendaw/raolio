@@ -4,6 +4,7 @@
 #include "shared.h"
 #include "type.h"
 #include <boost/filesystem.hpp>
+#include <array>
 
 namespace bfs = boost::filesystem;
 

@@ -1,3 +1,5 @@
+local LinkFlags = ' -pthread -lboost_system -lboost_filesystem -lboost_regex -lev'
+
 local SharedObjects = Define.Objects
 {
 	Sources = Item()
@@ -23,7 +25,7 @@ icbmc = Define.Executable
 		:Include 'clientcore.cxx'
 		:Include(icmbcMocOutputs),
 	Objects = SharedObjects,
-	LinkFlags = ' -lvlc -lboost_system -lboost_filesystem -lev'
+	LinkFlags = LinkFlags .. ' -lvlc'
 }
 
 icbms = Define.Executable
@@ -32,7 +34,7 @@ icbms = Define.Executable
 	Sources = Item()
 		:Include 'server.cxx',
 	Objects = SharedObjects,
-	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
+	LinkFlags = LinkFlags
 }
 
 icbmr = Define.Executable
@@ -41,5 +43,5 @@ icbmr = Define.Executable
 	Sources = Item()
 		:Include 'remote.cxx',
 	Objects = SharedObjects,
-	LinkFlags = ' -lboost_system -lboost_filesystem -lev'
+	LinkFlags = LinkFlags
 }

@@ -4,7 +4,12 @@
 #include "shared.h"
 #include "extrastandard.h"
 
-#include <regex>
+//#include <regex>
+#include <boost/regex.hpp>
+#define hack_regex_match boost::regex_match
+#define hack_regex boost::regex
+#define hack_smatch boost::smatch
+#define hack_mark_count(regex) (regex.mark_count() - 1)
 #include <cassert>
 #include <map>
 #include <string>
@@ -25,24 +30,24 @@ template <typename EnumerationType> struct Enumeration : std::map<std::string, E
 
 template <typename ...CaptureTypes> struct Parser
 {
-	Parser(char const *Pattern) : Expression{Pattern} { assert(Expression.mark_count() == sizeof...(CaptureTypes)); }
+	Parser(char const *Pattern) : Expression{Pattern} { Assert(hack_mark_count(Expression), sizeof...(CaptureTypes)); }
 
 	template <typename... OutputTypes>
 	bool operator()(std::string Input, OutputTypes &...Outputs)
 	{
-		std::smatch Captures;
-		if (!std::regex_match(Input, Captures, Expression)) return false;
+		hack_smatch Captures;
+		if (!hack_regex_match(Input, Captures, Expression)) return false;
 		Extract<void, std::tuple<CaptureTypes...>, std::tuple<OutputTypes...>>{Captures, Outputs...};
 		return true;
 	}
 
 	private:
-		std::regex Expression;
+		hack_regex Expression;
 
 		template <typename Enabled, typename ExtractTypes, typename OutputTypes> struct Extract;
 
 		template <typename Dummy> struct Extract<Dummy, std::tuple<>, std::tuple<>>
-			{ Extract(std::smatch const &Captures) {} };
+			{ Extract(hack_smatch const &Captures) {} };
 
 		template <typename NextType, typename ...RemainingTypes, typename ...OutputTypes>
 			struct Extract
@@ -52,7 +57,7 @@ template <typename ...CaptureTypes> struct Parser
 				std::tuple<NextType, OutputTypes...>
 			>
 		{
-			Extract(std::smatch const &Captures, NextType &Output, OutputTypes &...OtherOutputs)
+			Extract(hack_smatch const &Captures, NextType &Output, OutputTypes &...OtherOutputs)
 			{
 				Output = Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)];
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>{Captures, OtherOutputs...};
@@ -67,7 +72,7 @@ template <typename ...CaptureTypes> struct Parser
 				std::tuple<NextType, OutputTypes...>
 			>
 		{
-			Extract(std::smatch const &Captures, NextType &Output, OutputTypes &...OtherOutputs)
+			Extract(hack_smatch const &Captures, NextType &Output, OutputTypes &...OtherOutputs)
 			{
 				String(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]) >> Output;
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>(Captures, OtherOutputs...);
@@ -83,12 +88,12 @@ template <typename ...CaptureTypes> struct Parser
 				std::tuple<typename EnumerationType::Type, OutputTypes...>
 			>
 		{
-			Extract(std::smatch const &Captures, typename EnumerationType::Type &Output, OutputTypes &...OtherOutputs)
+			Extract(hack_smatch const &Captures, typename EnumerationType::Type &Output, OutputTypes &...OtherOutputs)
 			{
 				EnumerationType Enumeration;
 				typename EnumerationType::iterator Found =
 					Enumeration.find(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]);
-				assert(Found != Enumeration.end());
+				Assert(Found != Enumeration.end());
 				Output = Found->second;
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>{Captures, OtherOutputs...};
 			}
@@ -102,7 +107,7 @@ template <typename ...CaptureTypes> struct Parser
 				std::tuple<OutputTypes...>
 			>
 		{
-			Extract(std::smatch const &Captures, OutputTypes &...OtherOutputs)
+			Extract(hack_smatch const &Captures, OutputTypes &...OtherOutputs)
 				{ Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>{Captures, OtherOutputs...}; }
 		};
 };
