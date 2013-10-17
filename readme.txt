@@ -1,6 +1,6 @@
 Requires a c++11 compiler (regex support optional), Tup, Qt 5.0, libev and boost.
 
-Copy tupsupport/tup.config.template to tup.config and edit it as you see fit.
+Copy tup.config.template to tup.config and edit it as you see fit.
 
 Keyboard shortcuts:
 alt a = Add files to playlist
