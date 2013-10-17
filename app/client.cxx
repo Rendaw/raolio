@@ -26,9 +26,12 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QCryptographicHash>
+#include <QStyledItemDelegate>
+#include <QPainter>
 #include <QSplitter>
 #include <QSettings>
 #include <QMimeData>
+#include <QMouseEvent>
 
 #include <iomanip>
 #include <memory>
@@ -48,6 +51,32 @@ QSettings *Settings = nullptr;
 #define SCSortReverse "Reverse"
 #define SCColumns "Columns"
 #define SCColumnValue "Value"
+#define SCSplitLeft "SplitLeft"
+#define SCSplitRight "SplitRight"
+
+struct StarDelegate : QStyledItemDelegate
+{
+	StarDelegate(QAbstractItemModel &Model) : Model(Model) {}
+	QAbstractItemModel &Model;
+	QPixmap Pixmap{"star.png"};
+	QPoint PixmapSize{Pixmap.width(), Pixmap.height()};
+	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+	{
+		if (option.state & QStyle::State_Selected)
+			painter->fillRect(option.rect, option.palette.highlight());
+		if (!index.isValid()) return;
+		auto Data = Model.data(index);
+		if (!Data.isValid()) return;
+		assert(Data.canConvert<bool>());
+		if (Data.toBool())
+			painter->drawPixmap(
+				QRect(option.rect.center() - PixmapSize / 2, Pixmap.size()),
+				Pixmap, Pixmap.rect());
+	}
+
+	QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+		{ return Pixmap.size(); }
+};
 
 struct ServerInfo
 {
@@ -57,7 +86,7 @@ struct ServerInfo
 
 	std::string Host;
 	uint16_t Port;
-	std::string URI(void) const { return String() << "icbm://" << Host << ":" << Port; }
+	std::string URI(void) const { return String() << Host << ":" << Port; }
 
 	bool Remember;
 	std::string RememberAs;
@@ -155,7 +184,7 @@ struct ServerHistory : QAbstractItemModel
 	// Qt item model
 	QModelIndex index(int Row, int Column, QModelIndex const &Parent = QModelIndex()) const override { return createIndex(Row, Column); }
 	QModelIndex parent(QModelIndex const &Index) const override { return QModelIndex(); }
-	int rowCount(const QModelIndex &Parent) const { if (Parent.isValid()) return 0; return Count() + 1; }
+	int rowCount(const QModelIndex &Parent) const { if (Parent.isValid()) return 0; return Count(); }
 	int columnCount(const QModelIndex &Parent) const { return 2; }
 	QVariant data(const QModelIndex &Index, int Role) const
 	{
@@ -167,7 +196,7 @@ struct ServerHistory : QAbstractItemModel
 		switch (Role)
 		{
 			case Qt::DisplayRole:
-				if (Index.column() == 0) return QVariant(Get(Index.row()).Remember);
+				if (Index.column() == 0) return Get(Index.row()).Remember;
 				if (Index.column() == 1) return QString::fromUtf8(Get(Index.row()).Summary().c_str());
 			default:
 				return QVariant();
@@ -179,11 +208,20 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 void OpenServerSelect(void)
 {
 	auto ConnectWindow = new QDialog();
-	ConnectWindow->setWindowTitle("ICBM - Select Server");
+	ConnectWindow->setWindowTitle("Raolio - Select Server");
 	ConnectWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
-	auto OpenServerData = CreateQTStorage(ConnectWindow, make_unique<ServerHistory>());
-	auto ServerHistory = OpenServerData->Data.get();
+	struct ServerData
+	{
+		ServerHistory History;
+		StarDelegate Delegate{History};
+		QIcon ApplicationIcon{"raolio.png"};
+	};
+	auto OpenServerData = CreateQTStorage(ConnectWindow, make_unique<ServerData>());
+	auto ServerHistory = &OpenServerData->Data->History;
+	auto HistoryStarDelegate = &OpenServerData->Data->Delegate;
+
+	ConnectWindow->setWindowIcon(OpenServerData->Data->ApplicationIcon);
 
 	auto ConnectLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
@@ -218,6 +256,8 @@ void OpenServerSelect(void)
 	RecentServers->header()->hide();
 	RecentServers->setModel(ServerHistory);
 	RecentServers->setSelectionMode(QAbstractItemView::SingleSelection);
+	RecentServers->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+	RecentServers->setItemDelegateForColumn(0, HistoryStarDelegate);
 	HistoryLayout->addWidget(RecentServers);
 
 	auto HistoricRememberEntryLayout = new QBoxLayout(QBoxLayout::LeftToRight);
@@ -309,7 +349,7 @@ void OpenServerSelect(void)
 		Info.Remember = Remember->isChecked();
 		if (Info.Remember)
 			Info.RememberAs = RememberName->text().toUtf8().data();
-		static Regex::Parser<Regex::Ignore, std::string, Regex::Ignore, uint16_t> Parse("^(icbm://)?([^:]*)(:([0-9]+))?$");
+		static Regex::Parser<std::string, Regex::Ignore, uint16_t> Parse("^([^:]*)(:([0-9]+))?$");
 		if (!Parse(Server->text().toUtf8().data(), Info.Host, Info.Port))
 		{
 			QMessageBox::warning(ConnectWindow, "Invalid server", "The server you entered is invalid or in an unsupported format.");
@@ -328,9 +368,75 @@ void OpenServerSelect(void)
 		ConnectWindow->close();
 	});
 
-	RecentServers->setCurrentIndex(ServerHistory->index(0, 0));
 	ConnectWindow->show();
 }
+
+struct PositionSliderType : QSlider
+{
+	PositionSliderType(void) : QSlider(Qt::Horizontal)
+	{
+		setStyleSheet(
+			"QSlider {"
+				"min-height: 22px"
+			"}"
+			"QSlider::groove:horizontal {"
+				"border: 1px solid #000;"
+				"background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 rgba(236, 247, 253, 255), stop: 1 rgba(158, 214, 247, 255));"
+				"height: 20px;"
+				"border-radius: 4px;"
+			"}"
+			"QSlider::add-page:horizontal {"
+				"border-radius: 4px;"
+				"background: #fff;"
+				"height: 20px;"
+			"}"
+			"QSlider::handle:horizontal {"
+				"background: #fff;"
+				"border: 1px solid #777;"
+				"width: 8px;"
+				"border-radius: 2px;"
+				"margin-top: -1px;"
+				"margin-left: -1px;"
+				"margin-bottom: -1px;"
+			"}"
+			"QSlider::handle:horizontal:hover {"
+				//"background: #000;"
+				"background: rgba(158, 214, 247, 255);"
+				"border: 1px solid #444;"
+			"}"
+		);
+		setSingleStep(0);
+		setPageStep(0);
+	}
+
+	protected:
+		void mousePressEvent(QMouseEvent *event) {
+			// Thanks SO! http://stackoverflow.com/questions/11132597/qslider-mouse-direct-jump
+			QStyleOptionSlider opt;
+			initStyleOption(&opt);
+			QRect sr = style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, this);
+
+			if ((event->button() == Qt::LeftButton) && !sr.contains(event->pos()))
+			{
+				double halfHandleWidth = (0.5 * sr.width()) + 0.5;
+				int adaptedPosX = event->x();
+				if (adaptedPosX < halfHandleWidth)
+					adaptedPosX = halfHandleWidth;
+				if (adaptedPosX > width() - halfHandleWidth)
+					adaptedPosX = width() - halfHandleWidth;
+
+				double newWidth = (width() - halfHandleWidth) - halfHandleWidth;
+				double normalizedPosition = (adaptedPosX - halfHandleWidth) / newWidth;
+
+				int newVal = minimum() + ((maximum() - minimum()) * normalizedPosition);
+
+				if (invertedAppearance()) setValue(maximum() - newVal);
+				else setValue(newVal);
+				event->accept();
+			}
+			QSlider::mousePressEvent(event);
+		}
+};
 
 enum class PlaylistColumns
 {
@@ -340,8 +446,27 @@ enum class PlaylistColumns
 	Title
 };
 
+enum struct PlayState { Deselected, Pause, Play };
+
 struct PlaylistType : QAbstractItemModel
 {
+	private:
+		std::vector<PlaylistColumns> Columns;
+		struct PlaylistInfo
+		{
+			HashType Hash;
+			PlayState State;
+			Optional<uint16_t> Track;
+			std::string Title;
+			std::string Album;
+			std::string Artist;
+			PlaylistInfo(HashType const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
+			PlaylistInfo(void) {}
+		};
+		std::vector<PlaylistInfo> Playlist;
+		Optional<size_t> Index;
+	public:
+
 	PlaylistType(void) : Index{}
 	{
 		int const ColumnRows = Settings->beginReadArray(SCColumns);
@@ -389,7 +514,7 @@ struct PlaylistType : QAbstractItemModel
 		if (!Found)
 		{
 			beginInsertRows(QModelIndex(), Playlist.size() - 1, Playlist.size() - 1);
-			Playlist.emplace_back(Item.Hash, PlaylistInfo::Deselected, Item.Track, Item.Title, Item.Album, Item.Artist);
+			Playlist.emplace_back(Item.Hash, PlayState::Deselected, Item.Track, Item.Title, Item.Album, Item.Artist);
 			endInsertRows();
 			if (SignalUnsorted) SignalUnsorted();
 		}
@@ -419,18 +544,18 @@ struct PlaylistType : QAbstractItemModel
 		if (!Found) return;
 		if (Index)
 		{
-			Playlist[*Index].State = PlaylistInfo::Deselected;
+			Playlist[*Index].State = PlayState::Deselected;
 			dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
 		}
 		Index = *Found;
-		Playlist[*Index].State = PlaylistInfo::Pause;
+		Playlist[*Index].State = PlayState::Pause;
 		dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
 	}
 
 	Optional<bool> IsPlaying(void)
 	{
 		if (!Index) return {};
-		return Playlist[*Index].State == PlaylistInfo::Play;
+		return Playlist[*Index].State == PlayState::Play;
 	}
 
 	HashType GetID(int Row) const
@@ -445,6 +570,14 @@ struct PlaylistType : QAbstractItemModel
 		if (!Index) return {};
 		return Playlist[*Index].Hash;
 	}
+
+	Optional<PlaylistInfo> GetCurrent(void) const
+	{
+		if (!Index) return {};
+		return Playlist[*Index];
+	}
+
+	std::vector<PlaylistInfo> const &GetItems(void) const { return Playlist; }
 
 	Optional<HashType> GetNextID(void) const
 	{
@@ -479,15 +612,15 @@ struct PlaylistType : QAbstractItemModel
 	void Play(void)
 	{
 		if (!Index) return;
-		Playlist[*Index].State = PlaylistInfo::Play;
-		dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
+		Playlist[*Index].State = PlayState::Play;
+		dataChanged(createIndex(*Index, 0), createIndex(*Index, 0));
 	}
 
 	void Stop(void)
 	{
 		if (!Index) return;
-		Playlist[*Index].State = PlaylistInfo::Play;
-		dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
+		Playlist[*Index].State = PlayState::Pause;
+		dataChanged(createIndex(*Index, 0), createIndex(*Index, 0));
 	}
 
 	void Shuffle(void)
@@ -600,8 +733,8 @@ struct PlaylistType : QAbstractItemModel
 				if (Index.column() == 0)
 					switch (Playlist[Index.row()].State)
 					{
-						case PlaylistInfo::Pause: return QString("=");
-						case PlaylistInfo::Play: return QString(">");
+						case PlayState::Pause: return QString("=");
+						case PlayState::Play: return QString(">");
 						default: return QVariant();
 					}
 				switch (Columns[Index.column() - 1])
@@ -747,29 +880,15 @@ struct PlaylistType : QAbstractItemModel
 
 		return true;
 	}
-
-	private:
-		std::vector<PlaylistColumns> Columns;
-		struct PlaylistInfo
-		{
-			HashType Hash;
-			enum { Deselected, Pause, Play } State;
-			Optional<uint16_t> Track;
-			std::string Title;
-			std::string Album;
-			std::string Artist;
-			PlaylistInfo(HashType const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
-		};
-		std::vector<PlaylistInfo> Playlist;
-		Optional<size_t> Index;
 };
 
 void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Port)
 {
 	try
 	{
+		// Widget setup
 		auto MainWindow = new QWidget();
-		MainWindow->setWindowTitle("ICBM");
+		MainWindow->setWindowTitle("Raolio");
 		MainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
 		float InitialVolume = Settings->value(SCVolume, 0.75f).toFloat();
@@ -789,11 +908,29 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 				void Maintain(void) { if (InControl()) Request(); }
 				unsigned int Count = 2u;
 			} Volition;
+			QPixmap VolumeIcon{"volume.png"};
+			QIcon
+				ApplicationIcon{"raolio.png"},
+				LeftIcon{"left.png"},
+				RightIcon{"right.png"},
+				PlayIcon{"play.png"},
+				PauseIcon{"pause.png"},
+				AddIcon{"add.png"},
+				SortIcon{"sort.png"};
 		};
 		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Handle, InitialVolume));
 		auto Core = &PlayerData->Data->Core;
 		auto Playlist = &PlayerData->Data->Playlist;
 		auto Volition = &PlayerData->Data->Volition;
+		auto VolumeIcon = &PlayerData->Data->VolumeIcon;
+		auto LeftIcon = &PlayerData->Data->LeftIcon;
+		auto RightIcon = &PlayerData->Data->RightIcon;
+		auto PlayIcon = &PlayerData->Data->PlayIcon;
+		auto PauseIcon = &PlayerData->Data->PauseIcon;
+		auto AddIcon = &PlayerData->Data->AddIcon;
+		auto SortIcon = &PlayerData->Data->SortIcon;
+
+		MainWindow->setWindowIcon(PlayerData->Data->ApplicationIcon);
 
 		auto MainLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 		auto Splitter = new QSplitter();
@@ -803,6 +940,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		LeftLayout->setMargin(0);
 		auto ChatDisplay = new QTextEdit();
 		ChatDisplay->setReadOnly(true);
+		ChatDisplay->setStyleSheet("font-family: monospace");
 		auto ChatCursor = std::make_shared<QTextCursor>(ChatDisplay->document());
 		LeftLayout->addWidget(ChatDisplay);
 		auto ChatEntry = new QLineEdit();
@@ -825,17 +963,29 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		PlaylistView->setAcceptDrops(true);
 		PlaylistView->setDropIndicatorShown(true);
 		RightLayout->addWidget(PlaylistView);
-		auto Position = new QSlider(Qt::Horizontal);
+		auto Position = new PositionSliderType();
 		Position->setRange(0, 10000);
 		RightLayout->addWidget(Position);
+		auto VolumeLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+		auto VolumeLabel = new QLabel();
+		VolumeLabel->setPixmap(*VolumeIcon);
+		VolumeLayout->addWidget(VolumeLabel);
 		auto Volume = new QSlider(Qt::Horizontal);
 		Volume->setRange(0, 10000);
 		Volume->setValue(10000 * InitialVolume);
-		RightLayout->addWidget(Volume);
+		VolumeLayout->addWidget(Volume);
+		RightLayout->addLayout(VolumeLayout);
 		auto PlaylistControls = new QToolBar;
+		auto TransportStretch1 = new QWidget();
+		TransportStretch1->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+		TransportStretch1->setVisible(true);
+		PlaylistControls->addWidget(TransportStretch1);
 		auto Add = new QAction("Add", nullptr);
+		Add->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));
+		Add->setIcon(*AddIcon);
 		PlaylistControls->addAction(Add);
 		auto OrderMenu = new QMenu("Order");
+		OrderMenu->setIcon(*SortIcon);
 		auto Shuffle = new QAction("Shuffle", nullptr);
 		OrderMenu->addAction(Shuffle);
 		auto AdvancedOrder = new QAction("Advanced...", nullptr);
@@ -843,18 +993,103 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		PlaylistControls->addAction(OrderMenu->menuAction());
 		PlaylistControls->addSeparator();
 		auto Previous = new QAction("Previous", nullptr);
+		Previous->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Left));
+		Previous->setIcon(*LeftIcon);
 		PlaylistControls->addAction(Previous);
 		auto PlayStop = new QAction("Play", nullptr);
+		PlayStop->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Space));
+		PlayStop->setIcon(*PlayIcon);
 		PlaylistControls->addAction(PlayStop);
 		auto Next = new QAction("Next", nullptr);
+		Next->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Right));
+		Next->setIcon(*RightIcon);
 		PlaylistControls->addAction(Next);
+		auto TransportStretch2 = new QWidget();
+		TransportStretch2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+		TransportStretch2->setVisible(true);
+		PlaylistControls->addWidget(TransportStretch2);
 		RightLayout->addWidget(PlaylistControls);
 		RightWidget->setLayout(RightLayout);
 		Splitter->addWidget(RightWidget);
 
+		{
+			auto LeftSize = Settings->value(SCSplitLeft);
+			auto RightSize = Settings->value(SCSplitRight);
+			if (LeftSize.isValid() && RightSize.isValid())
+			{
+				QList<int> Sizes;
+				Sizes.push_back(LeftSize.toInt());
+				Sizes.push_back(RightSize.toInt());
+				Splitter->setSizes(Sizes);
+			}
+		}
 		MainLayout->addWidget(Splitter);
 		MainWindow->setLayout(MainLayout);
 
+		// Shared action functionality
+		auto const SharedStop = [=](void)
+		{
+			Core->Stop();
+			PlayStop->setText("Play");
+			PlayStop->setIcon(*PlayIcon);
+		};
+
+		auto const SharedPlay = [=](void)
+		{
+			Core->Play();
+			PlayStop->setText("Pause");
+			PlayStop->setIcon(*PauseIcon);
+		};
+
+		auto const SharedPrevious = [=](void)
+		{
+			auto PreviousID = Playlist->GetPreviousID();
+			if (!PreviousID) return;
+			Volition->Request();
+			Core->Play(*PreviousID, 0ul);
+		};
+
+		auto const SharedNext = [=](void)
+		{
+			auto NextID = Playlist->GetNextID();
+			if (!NextID) return;
+			Volition->Request();
+			Core->Play(*NextID, 0ul);
+		};
+
+		auto const SharedAdd = [=](void)
+		{
+			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
+				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
+				"All files (*)");
+			Dialog->setFileMode(QFileDialog::ExistingFiles);
+			auto AlreadySelected = std::make_shared<bool>(false);
+			QObject::connect(Dialog, &QFileDialog::filesSelected, [=](const QStringList &Selected) mutable
+			{
+				if (*AlreadySelected)
+				{
+					  // I'm pretty sure this is a Qt issue
+					  std::cout << "filesSelected double called." << std::endl;
+					  return;
+				}
+				for (auto File : Selected)
+				{
+					auto Hash = HashFile(File.toUtf8().data());
+					if (!Hash) continue; // TODO Warn?
+					Core->Add(Hash->first, Hash->second, File.toUtf8().data());
+				}
+				*AlreadySelected = true;
+			});
+			Dialog->show();
+		};
+
+		auto const SharedWrite = [=](std::string const &Message)
+		{
+			ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str()));
+			ChatDisplay->setTextCursor(*ChatCursor);
+		};
+
+		// Behavior
 		Playlist->SignalUnsorted = [PlaylistView](void)
 			{ PlaylistView->sortByColumn(-1, Qt::AscendingOrder); };
 
@@ -864,28 +1099,33 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		PositionUpdateTimer->start(1000);
 
 		Core->LogCallback = [=](std::string const &Message)
-		{
-			CrossThread->Transfer([ChatDisplay, ChatCursor, Message](void)
-			{
-				ChatCursor->insertText(QString::fromUtf8((Message + "\n").c_str()));
-				ChatDisplay->setTextCursor(*ChatCursor);
-			});
-		};
+			{ CrossThread->Transfer([=](void) { SharedWrite(Message); }); };
 		Core->SeekCallback = [=](float Time) { CrossThread->Transfer([=](void)
 			{ if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Time * 10000)); }); };
 		Core->AddCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->UpdateCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->SelectCallback = [=](HashType const &MediaID)
-			{ CrossThread->Transfer([=](void) { Volition->Ack(); Playlist->Select(MediaID); }); };
+		{
+			CrossThread->Transfer([=](void)
+			{
+				Volition->Ack();
+				Playlist->Select(MediaID);
+				auto Playing = Playlist->GetCurrent();
+				Assert(Playing);
+				SharedWrite(String() << "Playing " << Playing->Title);
+			});
+		};
 		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void)
 		{
 			Playlist->Play();
 			PlayStop->setText("Pause");
+			PlayStop->setIcon(*PauseIcon);
 		}); };
 		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void)
 		{
 			Playlist->Stop();
 			PlayStop->setText("Play");
+			PlayStop->setIcon(*PlayIcon);
 		}); };
 		Core->EndCallback = [=](void)
 		{
@@ -899,16 +1139,78 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 			});
 		};
 
+		QObject::connect(Splitter, &QSplitter::splitterMoved, [=](int, int)
+		{
+			auto Sizes = Splitter->sizes();
+			Assert(Sizes.size(), 2);
+			if (Sizes.front() == 0) ChatEntry->clearFocus();
+			if (Sizes.back() == 0) ChatEntry->setFocus();
+			Settings->setValue(SCSplitLeft, Sizes.front());
+			Settings->setValue(SCSplitRight, Sizes.back());
+		});
+
 		QObject::connect(ChatEntry, &QLineEdit::returnPressed, [=](void)
 		{
-			Core->Chat(ChatEntry->text().toUtf8().data());
+			std::string Message = ChatEntry->text().toUtf8().data();
+			if ((Message.size() >= 2) && (Message[0] == '/'))
+			{
+				SharedWrite(Message);
+				std::string Command = Message.substr(1);
+				auto const Matches = [&Command](std::string Key)
+				{
+					auto const Length = std::min(Command.size(), Key.size());
+					assert(Length > 0);
+					for (unsigned int Index = 0; Index < Length; ++Index)
+					{
+						if ((Index >= 0) && (Command[Index] == ' ')) break;
+						if (Command[Index] != Key[Index]) return false;
+					}
+					return true;
+				};
+				if (Matches("add")) SharedAdd();
+				else if (Matches("play"))
+				{
+					uint64_t Minutes = 0;
+					uint64_t Seconds = 0;
+					static Regex::Parser<uint64_t, uint64_t> Parse("^pl?a?y?\\s*(\\d+):(\\d+)$");
+					if (Parse(Command, Minutes, Seconds))
+					{
+						auto CurrentID = Playlist->GetCurrentID();
+						if (CurrentID)
+						{
+							Volition->Maintain();
+							Core->Play(*CurrentID, static_cast<uint64_t>((Minutes * 60 + Seconds) * 1000));
+						}
+					}
+					else SharedPlay();
+				}
+				else if (Matches("stop") || Matches("pause")) SharedStop();
+				else if (Matches("next")) SharedNext();
+				else if (Matches("back")) SharedPrevious();
+				else if (Matches("list") || Matches("ls"))
+				{
+					for (auto const &Item : Playlist->GetItems())
+						SharedWrite(String() <<
+							((Item.State == PlayState::Play) ? "> " :
+								((Item.State == PlayState::Pause) ? "= " :
+									"  ")) <<
+							Item.Title);
+				}
+				else if (Matches("quit") || Matches("exit")) { MainWindow->close(); return; }
+				else
+				{
+					ChatCursor->insertText("Unknown command.\n");
+					ChatDisplay->setTextCursor(*ChatCursor);
+				}
+			}
+			else Core->Chat(Message);
 			ChatEntry->setText("");
 		});
 
 		QObject::connect(ConfigureColumns, &QAction::triggered, [=](bool)
 		{
 			auto Dialog = new QDialog{MainWindow};
-			Dialog->setWindowTitle("ICBM - Select columns");
+			Dialog->setWindowTitle("Raolio - Select columns");
 
 			auto ColumnsLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
@@ -1022,30 +1324,21 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 			Settings->setValue(SCVolume, Percent);
 		});
 
-		QObject::connect(Add, &QAction::triggered, [=](bool)
+		QObject::connect(Add, &QAction::triggered, [=](bool) { SharedAdd(); });
+
+		QObject::connect(OrderMenu->menuAction(), &QAction::triggered, [=](bool)
 		{
-			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
-				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
-				"All files (*)");
-			Dialog->setFileMode(QFileDialog::ExistingFiles);
-			auto AlreadySelected = std::make_shared<bool>(false);
-			QObject::connect(Dialog, &QFileDialog::filesSelected, [=](const QStringList &Selected) mutable
+			std::list<PlaylistType::SortFactor> SortFactors;
+			int const SavedFactorCount = Settings->beginReadArray(SCSort);
+			for (int Index = 0; Index < SavedFactorCount; ++Index)
 			{
-				if (*AlreadySelected)
-				{
-					  // I'm pretty sure this is a Qt issue
-					  std::cout << "filesSelected double called." << std::endl;
-					  return;
-				}
-				for (auto File : Selected)
-				{
-					auto Hash = HashFile(File.toUtf8().data());
-					if (!Hash) continue; // TODO Warn?
-					Core->Add(Hash->first, Hash->second, File.toUtf8().data());
-				}
-				*AlreadySelected = true;
-			});
-			Dialog->show();
+				Settings->setArrayIndex(Index);
+				SortFactors.emplace_back(
+					static_cast<PlaylistColumns>(Settings->value(SCSortID).toInt()),
+					Settings->value(SCSortReverse).toBool());
+			}
+			Settings->endArray();
+			Playlist->Sort(SortFactors);
 		});
 
 		QObject::connect(Shuffle, &QAction::triggered, [=](bool)
@@ -1054,7 +1347,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		QObject::connect(AdvancedOrder, &QAction::triggered, [=](bool)
 		{
 			auto Dialog = new QDialog{MainWindow};
-			Dialog->setWindowTitle("ICBM - Custom sort...");
+			Dialog->setWindowTitle("Raolio - Custom sort...");
 
 			auto SortLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
@@ -1192,37 +1485,17 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 			Dialog->show();
 		});
 
-		QObject::connect(Previous, &QAction::triggered, [=](bool)
-		{
-			auto PreviousID = Playlist->GetPreviousID();
-			if (!PreviousID) return;
-			Volition->Request();
-			Core->Play(*PreviousID, 0ul);
-		});
+		QObject::connect(Previous, &QAction::triggered, [=](bool) { SharedPrevious(); });
 
 		QObject::connect(PlayStop, &QAction::triggered, [=](bool)
 		{
 			auto IsPlaying = Playlist->IsPlaying();
 			if (!IsPlaying) return;
-			if (*IsPlaying)
-			{
-				Core->Stop();
-				PlayStop->setText("Play");
-			}
-			else
-			{
-				Core->Play();
-				PlayStop->setText("Pause");
-			}
+			if (*IsPlaying) SharedStop();
+			else SharedPlay();
 		});
 
-		QObject::connect(Next, &QAction::triggered, [=](bool)
-		{
-			auto NextID = Playlist->GetNextID();
-			if (!NextID) return;
-			Volition->Request();
-			Core->Play(*NextID, 0ul);
-		});
+		QObject::connect(Next, &QAction::triggered, [=](bool) { SharedNext(); });
 
 		MainWindow->show();
 
@@ -1251,9 +1524,7 @@ int main(int argc, char **argv)
 		"	padding: 0 3px 0 3px;"
 		"}"); // Thanks for the sensible defaults, qt!
 
-
-
-	QSettings Settings("Zarbosoft", "ICBM");
+	QSettings Settings("raolio", "settings");
 	::Settings = &Settings;
 
 	OpenServerSelect();

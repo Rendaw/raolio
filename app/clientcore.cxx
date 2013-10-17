@@ -106,7 +106,7 @@ void ClientCore::Play(void)
 }
 
 void ClientCore::Stop(void)
-	{ CallTransfer([&](void) { LocalStopInternal(); }); }
+	{ CallTransfer([&](void) { if (!Playing) return; LocalStopInternal(); }); }
 
 void ClientCore::Chat(std::string const &Message)
 {
