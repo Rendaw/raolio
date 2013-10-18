@@ -1,3 +1,6 @@
 [submodule "tupsupport"]
 	path = tupsupport
 	url = ../ren-tupsupport/
+[submodule "packaging"]
+	path = packaging
+	url = ../ren-packaging

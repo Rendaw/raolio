@@ -17,9 +17,9 @@ local icmbcMocOutputs = Define.Raw
 	Command = 'moc qtaux.h > moc_qtaux.cxx'
 }
 
-icbmc = Define.Executable
+raolioclient = Define.Executable
 {
-	Name = 'icbmc',
+	Name = 'raolioclient',
 	Sources = Item()
 		:Include 'client.cxx'
 		:Include 'clientcore.cxx'
@@ -28,20 +28,30 @@ icbmc = Define.Executable
 	LinkFlags = LinkFlags .. ' -lvlc'
 }
 
-icbms = Define.Executable
+raolioserver = Define.Executable
 {
-	Name = 'icbms',
+	Name = 'raolioserver',
 	Sources = Item()
 		:Include 'server.cxx',
 	Objects = SharedObjects,
 	LinkFlags = LinkFlags
 }
 
-icbmr = Define.Executable
+raolioremote = Define.Executable
 {
-	Name = 'icbmr',
+	Name = 'raolioremote',
 	Sources = Item()
 		:Include 'remote.cxx',
 	Objects = SharedObjects,
 	LinkFlags = LinkFlags
 }
+
+if not IsDebug()
+then
+	Package = Define.Package
+	{
+		Executables = raolioclient:Include(raolioremote):Include(raolioserver),
+		Resources = Item() + '*.png',
+		Licenses = Item() + '../license.txt'
+	}
+end

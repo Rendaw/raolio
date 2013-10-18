@@ -58,7 +58,7 @@ struct StarDelegate : QStyledItemDelegate
 {
 	StarDelegate(QAbstractItemModel &Model) : Model(Model) {}
 	QAbstractItemModel &Model;
-	QPixmap Pixmap{"star.png"};
+	QPixmap Pixmap{RESOURCELOCATION "/star.png"};
 	QPoint PixmapSize{Pixmap.width(), Pixmap.height()};
 	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
 	{
@@ -215,7 +215,7 @@ void OpenServerSelect(void)
 	{
 		ServerHistory History;
 		StarDelegate Delegate{History};
-		QIcon ApplicationIcon{"raolio.png"};
+		QIcon ApplicationIcon{RESOURCELOCATION "/raolio.png"};
 	};
 	auto OpenServerData = CreateQTStorage(ConnectWindow, make_unique<ServerData>());
 	auto ServerHistory = &OpenServerData->Data->History;
@@ -908,15 +908,15 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 				void Maintain(void) { if (InControl()) Request(); }
 				unsigned int Count = 2u;
 			} Volition;
-			QPixmap VolumeIcon{"volume.png"};
+			QPixmap VolumeIcon{RESOURCELOCATION "/volume.png"};
 			QIcon
-				ApplicationIcon{"raolio.png"},
-				LeftIcon{"left.png"},
-				RightIcon{"right.png"},
-				PlayIcon{"play.png"},
-				PauseIcon{"pause.png"},
-				AddIcon{"add.png"},
-				SortIcon{"sort.png"};
+				ApplicationIcon{RESOURCELOCATION "/raolio.png"},
+				LeftIcon{RESOURCELOCATION "/left.png"},
+				RightIcon{RESOURCELOCATION "/right.png"},
+				PlayIcon{RESOURCELOCATION "/play.png"},
+				PauseIcon{RESOURCELOCATION "/pause.png"},
+				AddIcon{RESOURCELOCATION "/add.png"},
+				SortIcon{RESOURCELOCATION "/sort.png"};
 		};
 		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Handle, InitialVolume));
 		auto Core = &PlayerData->Data->Core;

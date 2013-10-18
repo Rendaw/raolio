@@ -1,4 +1,4 @@
-#include "../app/regex.h"
+#include "../regex.h"
 
 int main(int, char **)
 {
