@@ -15,7 +15,7 @@ Info =
 Arch64 =
 {
 	LicenseStyle = 'BSD',
-	Dependencies = {'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libev>=4.15-1', 'qt5-base>=5.1.1-1'}
+	Dependencies = {'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libev>=4.15-1', 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3'}
 }
 
 Ubuntu12 =
