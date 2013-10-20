@@ -109,11 +109,11 @@ bool CoreConnection::IdleWrite(void)
 	{
 		std::vector<uint8_t> Data(ChunkSize);
 		Assert(Response.File.tellg(), Response.Chunk * ChunkSize);
-		Response.File.read((char *)&Data[0], Data.size());
-		size_t Read = Response.File.gcount();
+		Response.File.read((char *)&Data[0], ChunkSize);
+		std::streamsize Read = Response.File.gcount();
 		if (Read > 0)
 		{
-			Data.resize(Read);
+			Data.resize(static_cast<size_t>(Read));
 			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
 			//if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
 			Assert((Read == ChunkSize) || (Response.File.eof()));
@@ -163,7 +163,7 @@ void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t cons
 		if (Response.File.is_open()) Response.File.close();
 		Response.File.open(Out->second.Path, std::fstream::in);
 	}
-	Response.File.seekg(From * ChunkSize);
+	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize));
 	Response.ID = MediaID;
 	Response.Chunk = From;
 	WakeIdleWrite();

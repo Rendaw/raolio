@@ -34,7 +34,7 @@ template <typename ConnectionType> struct Network
 				if (this->Socket < 0) throw ConstructionError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
 				sockaddr_in AddressInfo{};
 				AddressInfo.sin_family = AF_INET;
-				memcpy(&AddressInfo.sin_addr, HostInfo->h_addr_list[0], HostInfo->h_length);
+				memcpy(&AddressInfo.sin_addr, HostInfo->h_addr_list[0], static_cast<size_t>(HostInfo->h_length));
 				AddressInfo.sin_port = htons(Port);
 
 				if (connect(this->Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
