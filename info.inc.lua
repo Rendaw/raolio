@@ -6,7 +6,7 @@ Info =
 	ExtendedDescription = 'Raolio is a client-server media player system where any client can direct playback.  Raolio is suitable for private media performances in office or long-distance situations where turning the volume up really high isn\'t a solution.',
 	Version = 0,
 	Website = 'http://www.zarbosoft.com/raolio',
-	Forum = 'http://www.zarbosoft.com/forum/index.php?board=9.0',
+	Forum = 'http://www.zarbosoft.com/forum/index.php?board=10.0',
 	CompanyWebsite = 'http://www.zarbosoft.com/',
 	Author = 'Rendaw',
 	EMail = 'spoo@zarbosoft.com'
