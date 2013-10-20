@@ -23,9 +23,7 @@ Ubuntu =
 	Section = '',
 	Dependencies = 
 	{
-		'libboost-filesystem (>= 1.53.0-6)',
-		'libboost-regex (>= 1.53.0-6)',
-		'libboost-system (>= 1.53.0-6)',
+		'libboost-all-dev (>= 1.53.0-6)',
 		'libqt5core5 (>= 5.0.2)',
 		'libqt5widgets5 (>= 5.0.2)',
 		'libqt5gui5 (>= 5.0.2)',
