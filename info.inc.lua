@@ -18,10 +18,20 @@ Arch64 =
 	Dependencies = {'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libev>=4.15-1', 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3'}
 }
 
-Ubuntu12 =
+Ubuntu =
 {
 	Section = '',
-	Dependencies = {} -- In the form 'pkg (>= version)' as from trial and error
+	Dependencies = 
+	{
+		'libboost-filesystem (>= 1.53.0-6)',
+		'libboost-regex (>= 1.53.0-6)',
+		'libboost-system (>= 1.53.0-6)',
+		'libqt5core5 (>= 5.0.2)',
+		'libqt5widgets5 (>= 5.0.2)',
+		'libqt5gui5 (>= 5.0.2)',
+		'libev4 (>= 1.4.11-1)',
+		'libvlc5 (>= 2.0.8-1)'
+	}
 }
 
 if arg and arg[1]
