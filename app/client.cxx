@@ -145,23 +145,23 @@ struct ServerHistory : QAbstractItemModel
 		std::vector<ServerInfo> NewItems;
 		NewItems.reserve(Items.size() + 1);
 
-		// Keep all checked items verbatim
-		if (NewItem.Remember) NewItems.push_back(NewItem);
-		for (auto const &Item : Items) if (Item.Remember) NewItems.push_back(Item);
-
-		// Keep up to 20 unique unchecked items
-		size_t UnrememberedCount = 0;
-		if (!NewItem.Remember) { NewItems.push_back(NewItem); ++UnrememberedCount; }
+		// Create the new list
+		NewItems.push_back(NewItem);
+		size_t Unchecked = 1;
 		for (auto const &Item : Items)
 		{
-			if (UnrememberedCount > 20) break;
-			if (Item.Remember) continue;
-			if ((Item.Host == NewItem.Host) &&
-				(Item.Port == NewItem.Port))
-				continue;
+			// Keep only 20 unique unchecked items, all checked items
+			if (!Item.Remember)
+			{
+				if (Unchecked > 20) continue;
+				if ((Item.Host == NewItem.Host) &&
+					(Item.Port == NewItem.Port))
+					continue;
+				++Unchecked;
+			}
 			NewItems.push_back(Item);
-			++UnrememberedCount;
 		}
+
 		Items.swap(NewItems);
 
 		// Save
@@ -454,13 +454,13 @@ struct PlaylistType : QAbstractItemModel
 		std::vector<PlaylistColumns> Columns;
 		struct PlaylistInfo
 		{
-			HashType Hash;
+			HashT Hash;
 			PlayState State;
 			Optional<uint16_t> Track;
 			std::string Title;
 			std::string Album;
 			std::string Artist;
-			PlaylistInfo(HashType const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
+			PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
 			PlaylistInfo(void) {}
 		};
 		std::vector<PlaylistInfo> Playlist;
@@ -502,7 +502,7 @@ struct PlaylistType : QAbstractItemModel
 		Settings->endArray();
 	}
 
-	Optional<size_t> Find(HashType const &Hash)
+	Optional<size_t> Find(HashT const &Hash)
 	{
 		for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
 		return {};
@@ -528,7 +528,7 @@ struct PlaylistType : QAbstractItemModel
 		}
 	}
 
-	void Remove(HashType const &Hash)
+	void Remove(HashT const &Hash)
 	{
 		auto Found = Find(Hash);
 		if (!Found) return;
@@ -538,18 +538,20 @@ struct PlaylistType : QAbstractItemModel
 		endRemoveRows();
 	}
 
-	void Select(HashType const &Hash)
+	bool Select(HashT const &Hash)
 	{
 		auto Found = Find(Hash);
-		if (!Found) return;
+		if (!Found) return true;
 		if (Index)
 		{
 			Playlist[*Index].State = PlayState::Deselected;
 			dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
 		}
+		bool Out = Index == Found;
 		Index = *Found;
 		Playlist[*Index].State = PlayState::Pause;
 		dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
+		return Out;
 	}
 
 	Optional<bool> IsPlaying(void)
@@ -558,14 +560,14 @@ struct PlaylistType : QAbstractItemModel
 		return Playlist[*Index].State == PlayState::Play;
 	}
 
-	HashType GetID(int Row) const
+	HashT GetID(int Row) const
 	{
 		assert(Row >= 0);
 		assert(Row < Playlist.size());
 		return Playlist[Row].Hash;
 	}
 
-	Optional<HashType> GetCurrentID(void) const
+	Optional<HashT> GetCurrentID(void) const
 	{
 		if (!Index) return {};
 		return Playlist[*Index].Hash;
@@ -579,7 +581,7 @@ struct PlaylistType : QAbstractItemModel
 
 	std::vector<PlaylistInfo> const &GetItems(void) const { return Playlist; }
 
-	Optional<HashType> GetNextID(void) const
+	Optional<HashT> GetNextID(void) const
 	{
 		if (!Index)
 		{
@@ -594,7 +596,7 @@ struct PlaylistType : QAbstractItemModel
 		}
 	}
 
-	Optional<HashType> GetPreviousID(void) const
+	Optional<HashT> GetPreviousID(void) const
 	{
 		if (!Index)
 		{
@@ -625,7 +627,7 @@ struct PlaylistType : QAbstractItemModel
 
 	void Shuffle(void)
 	{
-		HashType CurrentID;
+		HashT CurrentID;
 		if (Index)
 		{
 			assert(*Index < Playlist.size());
@@ -647,7 +649,7 @@ struct PlaylistType : QAbstractItemModel
 	};
 	void Sort(std::list<SortFactor> const &Factors)
 	{
-		HashType CurrentID;
+		HashT CurrentID;
 		if (Index)
 		{
 			assert(*Index < Playlist.size());
@@ -771,7 +773,7 @@ struct PlaylistType : QAbstractItemModel
 
 	void sort(int Column, Qt::SortOrder Order) override
 	{
-		HashType CurrentID;
+		HashT CurrentID;
 		if (Index)
 		{
 			assert(*Index < Playlist.size());
@@ -920,6 +922,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		};
 		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Handle, InitialVolume));
 		auto Core = &PlayerData->Data->Core;
+		Core->SetVolume(InitialVolume);
 		auto Playlist = &PlayerData->Data->Playlist;
 		auto Volition = &PlayerData->Data->Volition;
 		auto VolumeIcon = &PlayerData->Data->VolumeIcon;
@@ -954,7 +957,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		auto PlaylistView = new QTreeView();
 		PlaylistView->setSortingEnabled(true);
 		PlaylistView->setModel(Playlist);
-		auto ConfigureColumns = new QAction("Select columns...", nullptr);
+		auto ConfigureColumns = new QAction("Select columns...", MainWindow);
 		PlaylistView->header()->addAction(ConfigureColumns);
 		PlaylistView->header()->setContextMenuPolicy(Qt::ActionsContextMenu);
 		PlaylistView->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -980,27 +983,27 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		TransportStretch1->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 		TransportStretch1->setVisible(true);
 		PlaylistControls->addWidget(TransportStretch1);
-		auto Add = new QAction("Add", nullptr);
+		auto Add = new QAction("Add", MainWindow);
 		Add->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));
 		Add->setIcon(*AddIcon);
 		PlaylistControls->addAction(Add);
-		auto OrderMenu = new QMenu("Order");
+		auto OrderMenu = new QMenu("Order", MainWindow);
 		OrderMenu->setIcon(*SortIcon);
 		auto Shuffle = new QAction("Shuffle", nullptr);
 		OrderMenu->addAction(Shuffle);
-		auto AdvancedOrder = new QAction("Advanced...", nullptr);
+		auto AdvancedOrder = new QAction("Advanced...", MainWindow);
 		OrderMenu->addAction(AdvancedOrder);
 		PlaylistControls->addAction(OrderMenu->menuAction());
 		PlaylistControls->addSeparator();
-		auto Previous = new QAction("Previous", nullptr);
+		auto Previous = new QAction("Previous", MainWindow);
 		Previous->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Left));
 		Previous->setIcon(*LeftIcon);
 		PlaylistControls->addAction(Previous);
-		auto PlayStop = new QAction("Play", nullptr);
+		auto PlayStop = new QAction("Play", MainWindow);
 		PlayStop->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Space));
 		PlayStop->setIcon(*PlayIcon);
 		PlaylistControls->addAction(PlayStop);
-		auto Next = new QAction("Next", nullptr);
+		auto Next = new QAction("Next", MainWindow);
 		Next->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Right));
 		Next->setIcon(*RightIcon);
 		PlaylistControls->addAction(Next);
@@ -1104,15 +1107,16 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 			{ if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Time * 10000)); }); };
 		Core->AddCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->UpdateCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
-		Core->SelectCallback = [=](HashType const &MediaID)
+		Core->SelectCallback = [=](HashT const &MediaID)
 		{
 			CrossThread->Transfer([=](void)
 			{
 				Volition->Ack();
-				Playlist->Select(MediaID);
+				bool WasSame = Playlist->Select(MediaID);
 				auto Playing = Playlist->GetCurrent();
 				Assert(Playing);
-				SharedWrite(String() << "Playing " << Playing->Title);
+				if (!WasSame)
+					SharedWrite(String() << "Playing " << Playing->Title);
 			});
 		};
 		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void)
@@ -1179,7 +1183,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 						if (CurrentID)
 						{
 							Volition->Maintain();
-							Core->Play(*CurrentID, static_cast<uint64_t>((Minutes * 60 + Seconds) * 1000));
+							Core->Play(*CurrentID, MediaTimeT((Minutes * 60 + Seconds) * 1000));
 						}
 					}
 					else SharedPlay();

@@ -13,14 +13,16 @@ namespace bfs = boost::filesystem;
 
 constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
 
+typedef StrictType(uint64_t) MediaTimeT;
+
 DefineProtocol(NetProto1)
 
 DefineProtocolVersion(NP1V1, NetProto1)
 DefineProtocolMessage(NP1V1Clock, NP1V1, void(uint64_t InstanceID, uint64_t SystemTime))
-DefineProtocolMessage(NP1V1Prepare, NP1V1, void(HashType MediaID, std::string Extension, uint64_t Size))
-DefineProtocolMessage(NP1V1Request, NP1V1, void(HashType MediaID, uint64_t From))
-DefineProtocolMessage(NP1V1Data, NP1V1, void(HashType MediaID, uint64_t Chunk, std::vector<uint8_t> Bytes))
-DefineProtocolMessage(NP1V1Play, NP1V1, void(HashType MediaID, uint64_t MediaTime, uint64_t SystemTime))
+DefineProtocolMessage(NP1V1Prepare, NP1V1, void(HashT MediaID, std::string Extension, uint64_t Size))
+DefineProtocolMessage(NP1V1Request, NP1V1, void(HashT MediaID, uint64_t From))
+DefineProtocolMessage(NP1V1Data, NP1V1, void(HashT MediaID, uint64_t Chunk, std::vector<uint8_t> Bytes))
+DefineProtocolMessage(NP1V1Play, NP1V1, void(HashT MediaID, MediaTimeT MediaTime, uint64_t SystemTime))
 DefineProtocolMessage(NP1V1Stop, NP1V1, void(void))
 DefineProtocolMessage(NP1V1Chat, NP1V1, void(std::string Message))
 
@@ -47,17 +49,17 @@ struct CoreConnection : Network<CoreConnection>::Connection
 
 	struct MediaInfo
 	{
-		HashType ID;
+		HashT ID;
 		std::string Extension;
 		uint64_t Size;
-		MediaInfo(HashType const &ID, std::string const &Extension, uint64_t const &Size) : ID(ID), Extension{Extension}, Size{Size} {}
+		MediaInfo(HashT const &ID, std::string const &Extension, uint64_t const &Size) : ID(ID), Extension{Extension}, Size{Size} {}
 	};
 
 	std::queue<MediaInfo> Announce;
 
 	struct
 	{
-		HashType ID;
+		HashT ID;
 		uint64_t Size;
 		FilePieces Pieces;
 		uint64_t LastResponse; // Time, ms since epoch
@@ -68,7 +70,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 
 	struct
 	{
-		HashType ID;
+		HashT ID;
 		bfs::fstream File;
 		uint64_t Chunk;
 	} Response;
@@ -79,10 +81,10 @@ struct CoreConnection : Network<CoreConnection>::Connection
 
 	void HandleTimer(uint64_t const &Now);
 	void Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t const &SystemTime);
-	void Handle(NP1V1Prepare, HashType const &MediaID, std::string const &Extension, uint64_t const &Size);
-	void Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From);
-	void Handle(NP1V1Data, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes);
-	void Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime);
+	void Handle(NP1V1Prepare, HashT const &MediaID, std::string const &Extension, uint64_t const &Size);
+	void Handle(NP1V1Request, HashT const &MediaID, uint64_t const &From);
+	void Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes);
+	void Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &MediaTime, uint64_t const &SystemTime);
 	void Handle(NP1V1Stop);
 	void Handle(NP1V1Chat, std::string const &Message);
 
@@ -94,8 +96,8 @@ struct Core : CallTransferType
 	struct PlayStatus
 	{
 		bool Playing;
-		HashType MediaID;
-		uint64_t MediaTime;
+		HashT MediaID;
+		MediaTimeT MediaTime;
 		uint64_t SystemTime;
 	};
 
@@ -108,8 +110,8 @@ struct Core : CallTransferType
 	void Schedule(float Seconds, std::function<void(void)> const &Call);
 
 	// Core thread only
-	void Add(HashType const &MediaID, size_t Size, bfs::path const &Path);
-	void Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime);
+	void Add(HashT const &MediaID, size_t Size, bfs::path const &Path);
+	void Play(HashT const &MediaID, MediaTimeT Position, uint64_t SystemTime);
 	void Stop(void);
 	void Chat(std::string const &Message);
 
@@ -120,8 +122,8 @@ struct Core : CallTransferType
 	std::function<void(LogPriority Priority, std::string const &Message)> LogCallback;
 
 	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;
-	std::function<void(HashType const &MediaID, bfs::path const &Path)> AddCallback;
-	std::function<void(HashType const &MediaID, uint64_t MediaTime, uint64_t const &SystemTime)> PlayCallback;
+	std::function<void(HashT const &MediaID, bfs::path const &Path)> AddCallback;
+	std::function<void(HashT const &MediaID, MediaTimeT MediaTime, uint64_t const &SystemTime)> PlayCallback;
 	std::function<void(void)> StopCallback;
 	std::function<void(std::string const &Message)> ChatCallback;
 
@@ -144,7 +146,7 @@ struct Core : CallTransferType
 			uint64_t Created;
 			LibraryInfo(uint64_t Size, bfs::path const &Path, uint64_t const &Created) : Size{Size}, Path{Path}, Created{Created} {}
 		};
-		std::map<HashType, LibraryInfo> Library;
+		std::map<HashT, LibraryInfo> Library;
 
 		Network<CoreConnection> Net;
 };

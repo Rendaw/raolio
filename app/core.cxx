@@ -128,7 +128,7 @@ bool CoreConnection::IdleWrite(void)
 
 void CoreConnection::HandleTimer(uint64_t const &Now)
 {
-	Send(NP1V1Clock{}, Parent.ID, Now);
+	//Send(NP1V1Clock{}, Parent.ID, Now - 5000);
 
 	if (Request.File.is_open() && ((GetNow() - Request.LastResponse) > 10 * 1000))
 	{
@@ -143,7 +143,7 @@ void CoreConnection::Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t con
 	if (Parent.ClockCallback) Parent.ClockCallback(InstanceID, SystemTime);
 }
 
-void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, std::string const &Extension, uint64_t const &Size)
+void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string const &Extension, uint64_t const &Size)
 {
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
@@ -154,7 +154,7 @@ void CoreConnection::Handle(NP1V1Prepare, HashType const &MediaID, std::string c
 		RequestNext();
 }
 
-void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t const &From)
+void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &From)
 {
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
@@ -169,7 +169,7 @@ void CoreConnection::Handle(NP1V1Request, HashType const &MediaID, uint64_t cons
 	WakeIdleWrite();
 }
 
-void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes)
+void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes)
 {
 	if (MediaID != Request.ID) return;
 	if (Chunk != Request.Pieces.Next()) return;
@@ -192,7 +192,7 @@ void CoreConnection::Handle(NP1V1Data, HashType const &MediaID, uint64_t const &
 	}
 }
 
-void CoreConnection::Handle(NP1V1Play, HashType const &MediaID, uint64_t const &MediaTime, uint64_t const &SystemTime)
+void CoreConnection::Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &MediaTime, uint64_t const &SystemTime)
 {
 	Parent.Net.Forward(NP1V1Play{}, *this, MediaID, MediaTime, SystemTime);
 	Parent.Last.Playing = true;
@@ -291,7 +291,7 @@ void Core::Schedule(float Seconds, std::function<void(void)> const &Call)
 	Net.Schedule(Seconds, Call);
 }
 
-void Core::Add(HashType const &MediaID, size_t Size, bfs::path const &Path)
+void Core::Add(HashT const &MediaID, size_t Size, bfs::path const &Path)
 {
 	try
 	{
@@ -308,7 +308,7 @@ void Core::Add(HashType const &MediaID, size_t Size, bfs::path const &Path)
 	catch (...) {} // TODO Log/warn?
 }
 
-void Core::Play(HashType const &MediaID, uint64_t Position, uint64_t SystemTime)
+void Core::Play(HashT const &MediaID, MediaTimeT Position, uint64_t SystemTime)
 {
 	Net.Broadcast(NP1V1Play{}, MediaID, Position, SystemTime);
 	Last.Playing = true;

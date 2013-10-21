@@ -24,7 +24,7 @@ template <typename ConnectionType> struct Network
 	struct Connection
 	{
 		Connection(std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop, ConnectionType &DerivedThis) :
-			Dead{false}, Host{Host}, Port{Port}, Socket{Socket}, EVLoop{EVLoop}, ReadBuffer{this->Socket}, ReadWatcher{DerivedThis}, WriteWatcher{DerivedThis}
+			Dead{false}, Host{Host}, Port{Port}, Socket{Socket}, EVLoop{EVLoop}, ReadBuffer{*this}, ReadWatcher{DerivedThis}, WriteWatcher{DerivedThis}
 		{
 			if (this->Socket < 0)
 			{
@@ -95,29 +95,36 @@ template <typename ConnectionType> struct Network
 
 			struct ReadBufferType
 			{
-				ReadBufferType(int &Socket) : Socket(Socket) {}
+				ReadBufferType(Connection &This) : This(This) {}
 
 				Protocol::SubVector<uint8_t> Read(size_t Length, size_t Offset = 0)
 				{
-					assert(Socket >= 0);
+					assert(This.Socket >= 0);
+					if (Length == 0) return {};
 					if (Offset + Length <= Buffer.size()) return {Buffer, Offset, Length};
 					auto const Difference = Offset + Length - Buffer.size();
 					auto const OriginalLength = Buffer.size();
 					Buffer.resize(Offset + Length);
-					int Count = read(Socket, &Buffer[OriginalLength], Difference);
-					if (Count <= 0) { Buffer.resize(OriginalLength); return {}; }
+					int Count = recv(This.Socket, &Buffer[OriginalLength], Difference, 0);
+					if (Count <= 0)
+					{
+						This.Die();
+						Buffer.resize(OriginalLength);
+						return {};
+					}
 					if (Count < Difference) { Buffer.resize(OriginalLength + Count); return {}; }
 					return {Buffer, Offset, Length};
 				}
 
 				void Consume(size_t Length)
 				{
-					assert(Socket >= 0);
+					assert(This.Socket >= 0);
+					assert(Length > 0);
 					assert(Length <= Buffer.size());
 					Buffer.erase(Buffer.begin(), Buffer.begin() + Length);
 				}
 
-				int &Socket;
+				Connection &This;
 				std::vector<uint8_t> Buffer;
 			} ReadBuffer;
 
@@ -226,14 +233,14 @@ template <typename ConnectionType> struct Network
 
 	template <typename MessageType, typename... ArgumentTypes> void Broadcast(MessageType, ArgumentTypes const &... Arguments)
 	{
-		auto const &Data = MessageType::Write(Arguments...);
+		auto const Data = MessageType::Write(Arguments...);
 		for (auto const &Connection : Connections)
 			Connection->RawSend(Data);
 	}
 
 	template <typename MessageType, typename... ArgumentTypes> void Forward(MessageType, Connection const &From, ArgumentTypes const &... Arguments)
 	{
-		auto const &Data = MessageType::Write(Arguments...);
+		auto const Data = MessageType::Write(Arguments...);
 		for (auto &Connection : Connections)
 		{
 			if (&*Connection == &From) continue;
@@ -264,7 +271,7 @@ template <typename ConnectionType> struct Network
 		{
 			float Seconds;
 			std::function<void(void)> Callback;
-			ScheduleInfo(float Seconds, std::function<void(void)> const &Callback) : Callback(Callback) {}
+			ScheduleInfo(float Seconds, std::function<void(void)> const &Callback) : Seconds{Seconds}, Callback{Callback} {}
 		};
 		std::queue<ScheduleInfo> ScheduleQueue;
 

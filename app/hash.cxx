@@ -8,7 +8,7 @@ extern "C"
 	#include "md5.h"
 }
 
-std::string FormatHash(HashType const &Hash)
+std::string FormatHash(HashT const &Hash)
 {
 	std::stringstream Display;
 	Display << std::hex << std::setw(2);
@@ -16,9 +16,9 @@ std::string FormatHash(HashType const &Hash)
 	return Display.str();
 }
 
-Optional<HashType> UnformatHash(char const *String)
+Optional<HashT> UnformatHash(char const *String)
 {
-	HashType Hash;
+	HashT Hash;
 	for (size_t Position = 0; Position < Hash.size() * 2; Position += 2)
 	{
 		char const First = String[Position];
@@ -34,7 +34,7 @@ Optional<HashType> UnformatHash(char const *String)
 	return Hash;
 }
 
-Optional<std::pair<HashType, size_t>> HashFile(bfs::path const &Path)
+Optional<std::pair<HashT, size_t>> HashFile(bfs::path const &Path)
 {
 	bfs::ifstream File(Path);
 	if (!File) return {};
@@ -53,8 +53,7 @@ Optional<std::pair<HashType, size_t>> HashFile(bfs::path const &Path)
 		Size += static_cast<size_t>(Read);
 		cvs_MD5Update(&Context, &Buffer[0], static_cast<unsigned int>(Read));
 	}
-	HashType Hash{};
-	std::cout << "REN:: " << FormatHash(Hash) << std::endl;
+	HashT Hash{};
 	cvs_MD5Final(&Hash[0], &Context);
 	return std::make_pair(Hash, Size);
 }

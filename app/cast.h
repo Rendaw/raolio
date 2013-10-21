@@ -20,48 +20,48 @@ template <size_t Uniqueness, typename ValueType> struct ExplicitCastable<Uniquen
 
 	constexpr ExplicitCastable(void) {}
 	constexpr ExplicitCastable(ThisType const &That) : Value(*That) {}
-	constexpr ExplicitCastable(ValueType const &That) : Value(That) {}
-	template <typename ThatType> constexpr ExplicitCastable(ThatType const &) = delete;
+	explicit constexpr ExplicitCastable(ValueType const &That) : Value(That) {}
+	template <typename ThatType> explicit constexpr ExplicitCastable(ThatType const &That) : Value(static_cast<ValueType>(That)) {}
 
 	template <typename TargetType> TargetType operator()(ExplicitType<TargetType>) const { return static_cast<TargetType>(Value); }
 	ValueType &operator *(void) { return Value; }
 	constexpr ValueType const &operator *(void) const { return Value; }
 	constexpr static size_t Size = sizeof(ValueType);
 
-	constexpr ThisType operator +(ThisType const &That) const { return static_cast<ValueType>(Value + *That); }
-	constexpr ThisType operator +(ValueType const &That) const { return static_cast<ValueType>(Value + That); }
+	constexpr ThisType operator +(ThisType const &That) const { return ThisType(Value + *That); }
+	constexpr ThisType operator +(ValueType const &That) const { return ThisType(Value + That); }
 	template <typename ThatType> ThisType operator +(ThatType const &) const = delete;
 
-	constexpr ThisType operator -(ThisType const &That) const { return static_cast<ValueType>(Value - *That); }
-	constexpr ThisType operator -(ValueType const &That) const { return static_cast<ValueType>(Value - That); }
+	constexpr ThisType operator -(ThisType const &That) const { return ThisType(Value - *That); }
+	constexpr ThisType operator -(ValueType const &That) const { return ThisType(Value - That); }
 	template <typename ThatType> ThisType operator -(ThatType const &) const = delete;
 
-	constexpr ThisType operator *(ThisType const &That) const { return static_cast<ValueType>(Value * *That); }
-	constexpr ThisType operator *(ValueType const &That) const { return static_cast<ValueType>(Value * That); }
+	constexpr ThisType operator *(ThisType const &That) const { return ThisType(Value * *That); }
+	constexpr ThisType operator *(ValueType const &That) const { return ThisType(Value * That); }
 	template <typename ThatType> ThisType operator *(ThatType const &) const = delete;
 
-	constexpr ThisType operator /(ThisType const &That) const { return static_cast<ValueType>(Value / *That); }
-	constexpr ThisType operator /(ValueType const &That) const { return static_cast<ValueType>(Value / That); }
+	constexpr ThisType operator /(ThisType const &That) const { return ThisType(Value / *That); }
+	constexpr ThisType operator /(ValueType const &That) const { return ThisType(Value / That); }
 	template <typename ThatType> ThisType operator /(ThatType const &) const = delete;
 
 	template <typename ThatType> ThisType operator +=(ThatType const &) = delete;
-	ThisType operator +=(ThisType const &That) { return Value += *That; }
-	ThisType operator +=(ValueType const &That) { return Value += That; }
+	ThisType operator +=(ThisType const &That) { return ThisType(Value += *That); }
+	ThisType operator +=(ValueType const &That) { return ThisType(Value += That); }
 
 	ThisType operator ++(void) { return ++**this; }
 
-	ThisType operator -=(ThisType const &That) { return Value -= *That; }
-	ThisType operator -=(ValueType const &That) { return Value -= That; }
+	ThisType operator -=(ThisType const &That) { return ThisType(Value -= *That); }
+	ThisType operator -=(ValueType const &That) { return ThisType(Value -= That); }
 	template <typename ThatType> ThisType operator -=(ThatType const &) = delete;
 
 	ThisType operator --(void) { return --**this; }
 
-	ThisType operator *=(ThisType const &That) { return Value *= *That; }
-	ThisType operator *=(ValueType const &That) { return Value *= That; }
+	ThisType operator *=(ThisType const &That) { return ThisType(Value *= *That); }
+	ThisType operator *=(ValueType const &That) { return ThisType(Value *= That); }
 	template <typename ThatType> ThisType operator *=(ThatType const &) = delete;
 
-	ThisType operator /=(ThisType const &That) { return Value /= *That; }
-	ThisType operator /=(ValueType const &That) { return Value /= That; }
+	ThisType operator /=(ThisType const &That) { return ThisType(Value /= *That); }
+	ThisType operator /=(ValueType const &That) { return ThisType(Value /= That); }
 	template <typename ThatType> ThisType operator /=(ThatType const &) = delete;
 
 	constexpr bool operator ==(ThisType const &That) const { return Value == *That; }
@@ -93,8 +93,10 @@ template <size_t Uniqueness, typename ValueType> struct ExplicitCastable<Uniquen
 };
 template <size_t Uniqueness, typename ValueType> constexpr size_t ExplicitCastable<Uniqueness, ValueType, typename std::enable_if<std::is_integral<ValueType>::value>::type>::Size;
 
+template <size_t Uniqueness, typename ExplicitType> std::ostream &operator <<(std::ostream &Stream, ExplicitCastable<Uniqueness, ExplicitType> const &Value)
+	{ Stream << *Value; return Stream; }
+
 #define StrictType(Type) ::ExplicitCastable<__COUNTER__, Type>
 #define StrictCast(Value, ToType) (Value)(ExplicitType<ToType>())
-
 
 #endif

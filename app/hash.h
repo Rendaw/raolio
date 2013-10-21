@@ -8,12 +8,12 @@
 
 namespace bfs = boost::filesystem;
 
-typedef std::array<uint8_t, 16> HashType;
+typedef std::array<uint8_t, 16> HashT;
 
-std::string FormatHash(HashType const &Hash);
+std::string FormatHash(HashT const &Hash);
 
-Optional<HashType> UnformatHash(char const *String);
+Optional<HashT> UnformatHash(char const *String);
 
-Optional<std::pair<HashType, size_t>> HashFile(bfs::path const &Path);
+Optional<std::pair<HashT, size_t>> HashFile(bfs::path const &Path);
 
 #endif

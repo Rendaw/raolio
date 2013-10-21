@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 			goto FullBreak;
 		}
 
-		Core.Transfer([&, Hash](void) { Core.Play(*Hash, 0u, GetNow()); });
+		Core.Transfer([&, Hash](void) { Core.Play(*Hash, MediaTimeT(0), GetNow()); });
 	}
 	else if (Command == "--stop")
 	{

@@ -11,12 +11,16 @@
 
 namespace bfs = boost::filesystem;
 
+typedef StrictType(float) MediaTimePercentT;
+
 struct LatencyTracker
 {
 	// Cheap implementation
 	void Add(uint64_t Instance, uint64_t Sent)
 	{
-		auto Milliseconds = Sent - GetNow();
+		auto Now = GetNow();
+		if (Sent > Now) return; // Clocks out of synch probably
+		auto Milliseconds = Now - Sent;
 		if (Milliseconds > Max) Max = Milliseconds;
 	}
 
@@ -40,7 +44,7 @@ struct EngineWrapper
 
 struct MediaInfo
 {
-	HashType Hash;
+	HashT Hash;
 	bfs::path Filename;
 	Optional<uint16_t> Track;
 	std::string Artist;
@@ -52,7 +56,7 @@ struct MediaItem : MediaInfo
 {
 	libvlc_media_t *VLCMedia;
 
-	MediaItem(HashType const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
+	MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
 	~MediaItem(void);
 };
 
@@ -66,35 +70,32 @@ struct ClientCore
 	std::function<void(float Time)> SeekCallback;
 	std::function<void(MediaInfo Item)> AddCallback;
 	std::function<void(MediaInfo Item)> UpdateCallback;
-	std::function<void(HashType const &MediaID)> SelectCallback;
+	std::function<void(HashT const &MediaID)> SelectCallback;
 	std::function<void(void)> PlayCallback;
 	std::function<void(void)> StopCallback;
 	std::function<void(void)> EndCallback;
 
 	void Open(bool Listen, std::string const &Host, uint16_t Port);
 
-	void Add(HashType const &Hash, size_t Size, bfs::path const &Filename);
+	void Add(HashT const &Hash, size_t Size, bfs::path const &Filename);
 
 	void SetVolume(float Volume);
 	void GetTime(void);
 
-	void Play(HashType const &MediaID, uint64_t Position);
-	void Play(HashType const &MediaID, float Position);
+	void Play(HashT const &MediaID, MediaTimeT Position);
+	void Play(HashT const &MediaID, float Position);
 	void Play(void);
 	void Stop(void);
 	void Chat(std::string const &Message);
 
 	private:
-		void AddInternal(HashType const &Hash, bfs::path const &Filename);
+		void AddInternal(HashT const &Hash, bfs::path const &Filename);
 
 		void SetVolumeInternal(float Volume);
-		void SeekInternal(float Time);
 		float GetTimeInternal(void);
 
-		void LocalPlayInternal(HashType const &MediaID, uint64_t Position);
-		void PlayInternal(HashType const &MediaID, uint64_t Position, uint64_t SystemTime, uint64_t Now);
-		void PlayInternal(HashType const &MediaID, float Position);
-		void PlayInternal(void);
+		void LocalPlayInternal(HashT const &MediaID, MediaTimeT Position);
+		void PlayInternal(HashT const &MediaID, MediaTimeT Position, uint64_t SystemTime, uint64_t Now);
 		void LocalStopInternal(void);
 		void StopInternal(void);
 		bool IsPlayingInternal(void);
@@ -107,8 +108,9 @@ struct ClientCore
 		Core Parent;
 
 		EngineWrapper Engine;
-		std::map<HashType, std::unique_ptr<MediaItem>> MediaLookup;
+		std::map<HashT, std::unique_ptr<MediaItem>> MediaLookup;
 		MediaItem *Playing;
+		MediaTimePercentT LastPosition;
 
 		LatencyTracker Latencies;
 

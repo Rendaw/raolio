@@ -1,23 +1,23 @@
 #ifndef protocoloperations_h
 #define protocoloperations_h
 
-template <typename IntType> struct ProtocolOperations<IntType, typename std::enable_if<std::is_integral<IntType>::value>::type>
+template <typename IntT> struct ProtocolOperations<IntT, typename std::enable_if<std::is_integral<IntT>::value>::type>
 {
-	constexpr static size_t GetSize(IntType const &Argument) { return sizeof(IntType); }
+	constexpr static size_t GetSize(IntT const &Argument) { return sizeof(IntT); }
 
-	inline static void Write(uint8_t *&Out, IntType const &Argument)
-		{ *reinterpret_cast<IntType *>(Out) = Argument; Out += sizeof(Argument); }
+	inline static void Write(uint8_t *&Out, IntT const &Argument)
+		{ *reinterpret_cast<IntT *>(Out) = Argument; Out += sizeof(Argument); }
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, IntType &Data)
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, IntT &Data)
 	{
-		if (Buffer.Length < StrictCast(Offset, size_t) + sizeof(IntType))
+		if (Buffer.Length < StrictCast(Offset, size_t) + sizeof(IntT))
 		{
 			assert(false);
 			return false;
 		}
 
-		Data = *reinterpret_cast<IntType const *>(&Buffer[*Offset]);
-		Offset += static_cast<Protocol::SizeType::Type>(sizeof(IntType));
+		Data = *reinterpret_cast<IntT const *>(&Buffer[*Offset]);
+		Offset += static_cast<Protocol::SizeT::Type>(sizeof(IntT));
 		return true;
 	}
 };
@@ -31,35 +31,35 @@ template <size_t Uniqueness, typename Type> struct ProtocolOperations<ExplicitCa
 	inline static void Write(uint8_t *&Out, Explicit const &Argument)
 		{ ProtocolOperations<Type>::Write(Out, *Argument); }
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, Explicit &Data)
-		{ return ProtocolOperations<Type>::Read(VersionID, MessageID, Buffer, Offset, Data.Data); }
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, Explicit &Data)
+		{ return ProtocolOperations<Type>::Read(VersionID, MessageID, Buffer, Offset, *Data); }
 };
 
 template <> struct ProtocolOperations<std::string, void>
 {
 	static size_t GetSize(std::string const &Argument)
 	{
-		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-		return {Protocol::SizeType::Type(Protocol::ArraySizeType::Size + Argument.size())};
+		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeT::Type>::max());
+		return {Protocol::SizeT::Type(Protocol::ArraySizeT::Size + Argument.size())};
 	}
 
 	inline static void Write(uint8_t *&Out, std::string const &Argument)
 	{
-		Protocol::ArraySizeType const StringSize = (Protocol::ArraySizeType::Type)Argument.size();
+		Protocol::ArraySizeT const StringSize = Protocol::ArraySizeT(Argument.size());
 		ProtocolWrite(Out, *StringSize);
 		memcpy(Out, Argument.c_str(), Argument.size());
 		Out += Argument.size();
 	}
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::string &Data)
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, std::string &Data)
 	{
-		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size)
+		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeT::Size)
 		{
 			assert(false);
 			return false;
 		}
-		Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-		Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
+		Protocol::ArraySizeT::Type const &Size = *reinterpret_cast<Protocol::ArraySizeT::Type const *>(&Buffer[*Offset]);
+		Offset += static_cast<Protocol::SizeT::Type>(sizeof(Size));
 		if (Buffer.Length < StrictCast(Offset, size_t) + (size_t)Size)
 		{
 			assert(false);
@@ -75,27 +75,27 @@ template <typename ElementType> struct ProtocolOperations<std::vector<ElementTyp
 {
 	static size_t GetSize(std::vector<ElementType> const &Argument)
 	{
-		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-		return Protocol::ArraySizeType::Size + (Protocol::ArraySizeType::Type)Argument.size() * sizeof(ElementType);
+		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeT::Type>::max());
+		return Protocol::ArraySizeT::Size + (Protocol::ArraySizeT::Type)Argument.size() * sizeof(ElementType);
 	}
 
 	inline static void Write(uint8_t *&Out, std::vector<ElementType> const &Argument)
 	{
-		Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
+		Protocol::ArraySizeT const ArraySize = Protocol::ArraySizeT(Argument.size());
 		ProtocolWrite(Out, *ArraySize);
 		memcpy(Out, &Argument[0], Argument.size() * sizeof(ElementType));
 		Out += Argument.size() * sizeof(ElementType);
 	}
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::vector<ElementType> &Data)
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, std::vector<ElementType> &Data)
 	{
-		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size)
+		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeT::Size)
 		{
 			assert(false);
 			return false;
 		}
-		Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-		Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
+		Protocol::ArraySizeT::Type const &Size = *reinterpret_cast<Protocol::ArraySizeT::Type const *>(&Buffer[*Offset]);
+		Offset += static_cast<Protocol::SizeT::Type>(sizeof(Size));
 		if (Buffer.Length < StrictCast(Offset, size_t) + Size * sizeof(ElementType))
 		{
 			assert(false);
@@ -103,7 +103,7 @@ template <typename ElementType> struct ProtocolOperations<std::vector<ElementTyp
 		}
 		Data.resize(Size);
 		memcpy(&Data[0], &Buffer[*Offset], Size * sizeof(ElementType));
-		Offset += static_cast<Protocol::SizeType::Type>(Size * sizeof(ElementType));
+		Offset += static_cast<Protocol::SizeT::Type>(Size * sizeof(ElementType));
 		return true;
 	}
 };
@@ -112,30 +112,30 @@ template <typename ElementType> struct ProtocolOperations<std::vector<ElementTyp
 {
 	static size_t GetSize(std::vector<ElementType> const &Argument)
 	{
-		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeType::Type>::max());
-		Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
-		size_t Out = Protocol::ArraySizeType::Size;
-		for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < ArraySize; ++ElementIndex)
+		assert(Argument.size() <= std::numeric_limits<Protocol::ArraySizeT::Type>::max());
+		Protocol::ArraySizeT const ArraySize = Protocol::ArraySizeT(Argument.size());
+		size_t Out = Protocol::ArraySizeT::Size;
+		for (Protocol::ArraySizeT ElementIndex = Protocol::ArraySizeT(0); ElementIndex < ArraySize; ++ElementIndex)
 			Out += ProtocolGetSize(Argument[*ElementIndex]);
 		return Out;
 	}
 
 	inline static void Write(uint8_t *&Out, std::vector<ElementType> const &Argument)
 	{
-		Protocol::ArraySizeType const ArraySize = (Protocol::ArraySizeType::Type)Argument.size();
+		Protocol::ArraySizeT const ArraySize = Protocol::ArraySizeT(Argument.size());
 		ProtocolWrite(Out, *ArraySize);
-		for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < ArraySize; ++ElementIndex)
+		for (Protocol::ArraySizeT ElementIndex = Protocol::ArraySizeT(0); ElementIndex < ArraySize; ++ElementIndex)
 			ProtocolWrite(Out, Argument[*ElementIndex]);
 	}
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::vector<ElementType> &Data)
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, std::vector<ElementType> &Data)
 	{
-		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeType::Size) { assert(false); return false; }
-		Protocol::ArraySizeType::Type const &Size = *reinterpret_cast<Protocol::ArraySizeType::Type const *>(&Buffer[*Offset]);
-		Offset += static_cast<Protocol::SizeType::Type>(sizeof(Size));
+		if (Buffer.Length < StrictCast(Offset, size_t) + Protocol::ArraySizeT::Size) { assert(false); return false; }
+		Protocol::ArraySizeT::Type const &Size = *reinterpret_cast<Protocol::ArraySizeT::Type const *>(&Buffer[*Offset]);
+		Offset += static_cast<Protocol::SizeT::Type>(sizeof(Size));
 		if (Buffer.Length < StrictCast(Offset, size_t) + (size_t)Size) { assert(false); return false; }
 		Data.resize(Size);
-		for (Protocol::ArraySizeType ElementIndex = (Protocol::ArraySizeType::Type)0; ElementIndex < Size; ++ElementIndex)
+		for (Protocol::ArraySizeT ElementIndex = Protocol::ArraySizeT(0); ElementIndex < Size; ++ElementIndex)
 			ProtocolRead(VersionID, MessageID, Buffer, Offset, Data[*ElementIndex]);
 		return true;
 	}
@@ -152,7 +152,7 @@ template <typename ElementType, size_t Count> struct ProtocolOperations<std::arr
 		Out += Count * sizeof(ElementType);
 	}
 
-	static bool Read(Protocol::VersionIDType const &VersionID, Protocol::MessageIDType const &MessageID, Protocol::BufferType const &Buffer, Protocol::SizeType &Offset, std::array<ElementType, Count> &Data)
+	static bool Read(Protocol::VersionIDT const &VersionID, Protocol::MessageIDT const &MessageID, Protocol::BufferT const &Buffer, Protocol::SizeT &Offset, std::array<ElementType, Count> &Data)
 	{
 		if (Buffer.Length < Count * sizeof(ElementType))
 		{
@@ -160,7 +160,7 @@ template <typename ElementType, size_t Count> struct ProtocolOperations<std::arr
 			return false;
 		}
 		memcpy(&Data[0], &Buffer[*Offset], Count * sizeof(ElementType));
-		Offset += static_cast<Protocol::SizeType::Type>(Count * sizeof(ElementType));
+		Offset += static_cast<Protocol::SizeT::Type>(Count * sizeof(ElementType));
 		return true;
 	}
 };
