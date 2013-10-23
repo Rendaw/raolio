@@ -9,16 +9,6 @@
 std::mutex CallsMutex;
 std::vector<std::function<void(void)>> Calls;
 
-void InterruptSignalHandler(int)
-{
-	std::lock_guard<std::mutex> Lock(CallsMutex);
-	// TODO Save + clear console state
-	// Write messages
-	for (auto const &Call : Calls) Call();
-	Calls.clear();
-	// TODO Restore state
-}
-
 void Async(std::function<void(void)> const &Call)
 {
 	std::lock_guard<std::mutex> Lock(CallsMutex);
@@ -226,6 +216,13 @@ struct PlaylistType
 
 int main(int argc, char **argv)
 {
+	{
+		struct sigaction SignalAction{};
+		//SignalAction.sa_handler = SIG_IGN;
+		SignalAction.sa_handler = [](int) {};
+		sigaction(SIGALRM, &SignalAction, nullptr);
+	}
+	
 	std::string Handle{"Dog"};
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
@@ -371,19 +368,42 @@ int main(int argc, char **argv)
 		{"exit", QuitCommand},
 		{"now", NowCommand}
 	};
+	
+	std::thread Throd{[&](void) { while (true) { Async([](void) { std::cout << "Hi" << std::endl; }); sleep(5); } }};
 
-	std::signal(SIGALRM, InterruptSignalHandler);
-
+	// Readline loop
+	rl_getc_function = [](FILE *File) 
+	{ 
+		int Out = 0;
+		auto Result = read(fileno(File), &Out, 1);
+		std::cout << "=" << Result << ", " << (int)Out << "\n"; 
+		if (Result == -1 && errno == EINTR) std::cout << "EINTR" << std::endl;
+		if (Result != 1) Out = EOF;
+		return Out;
+	};
 	while (Alive)
 	{
-		std::unique_ptr<char[], void (*)(void *)> Line{readline(""), &std::free};
-		std::cout << "Line:" << Line.get() << std::endl;
+		{
+			std::lock_guard<std::mutex> Lock(CallsMutex);
+			for (auto const &Call : Calls) Call();
+			Calls.clear();
+		}
+		
+		std::cout << "a" << std::endl;
+		std::unique_ptr<char[], void (*)(void *)> Line{readline("This is my prompt: "), &std::free};
+		std::cout << "b" << std::endl;
+		
+		if (!Line) continue;
 
 		if (Line[0] == 0) continue;
 
+		std::cout << "Line:" << Line.get() << std::endl;
+
 		if (Line[0] != ' ')
 		{
+			std::cout << "c" << std::endl;
 			Core.Chat(Line.get());
+			std::cout << "d" << std::endl;
 			continue;
 		}
 
@@ -401,6 +421,7 @@ int main(int argc, char **argv)
 		size_t Start = 1;
 		for (; (Line[Start] != 0) && (Line[Start] != ' '); ++Start) {};
 		Found->second(&Line[Start]);
+		std::cout << "e" << std::endl;
 	}
 
 	return 0;
