@@ -10,11 +10,10 @@ local SharedObjects = Define.Objects
 		+ 'network.cxx'
 }
 
-local icmbcMocOutputs = Define.Raw
+local SharedClientObjects = Define.Objects
 {
-	Inputs = Item 'qtaux.h',
-	Outputs = Item 'moc_qtaux.cxx',
-	Command = 'moc qtaux.h > moc_qtaux.cxx'
+	Sources = Item()
+		+ 'clientcore.cxx'
 }
 
 PackageExecutables = Item()
@@ -22,11 +21,18 @@ PackageResources = Item()
 
 if tup.getconfig 'BUILDGUI' ~= 'false'
 then
+	local raolioguiMocOutputs = Define.Raw
+	{
+		Inputs = Item 'qtaux.h',
+		Outputs = Item 'moc_qtaux.cxx',
+		Command = 'moc qtaux.h > moc_qtaux.cxx'
+	}
+
 	raoliogui = Define.Executable
 	{
 		Name = 'raoliogui',
-		Sources = Item() + 'gui.cxx' + 'clientcore.cxx' + icmbcMocOutputs,
-		Objects = SharedObjects,
+		Sources = Item() + 'gui.cxx' + raolioguiMocOutputs,
+		Objects = SharedObjects + SharedClientObjects,
 		LinkFlags = LinkFlags .. ' -lvlc'
 	}
 	PackageExecutables = PackageExecutables + raoliogui
@@ -51,9 +57,18 @@ then
 		LinkFlags = LinkFlags
 	}
 
+	raoliocli = Define.Executable
+	{
+		Name = 'raoliocli',
+		Sources = Item() + 'cli.cxx',
+		Objects = SharedObjects + SharedClientObjects,
+		LinkFlags = LinkFlags .. ' -lreadline -lvlc'
+	}
+
 	PackageExecutables = PackageExecutables
 		+ (raolioserver)
 		+ (raolioremote)
+		+ (raoliocli)
 end
 
 if tup.getconfig 'PACKAGE' ~= 'false'
