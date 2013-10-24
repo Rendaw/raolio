@@ -183,7 +183,6 @@ void ClientCore::PlayInternal(HashT const &MediaID, MediaTimeT Position, uint64_
 	libvlc_media_player_set_media(Engine.VLCMediaPlayer, Media->second->VLCMedia);
 	float StartTime = StrictCast(Position, float) / libvlc_media_player_get_length(Engine.VLCMediaPlayer);
 	if (SelectCallback) SelectCallback(MediaID);
-	auto const Delay = SystemTime - Now;
 	if (Now >= SystemTime)
 	{
 		libvlc_media_player_play(Engine.VLCMediaPlayer);
@@ -192,7 +191,7 @@ void ClientCore::PlayInternal(HashT const &MediaID, MediaTimeT Position, uint64_
 	else
 	{
 		libvlc_media_player_pause(Engine.VLCMediaPlayer);
-		Parent.Schedule((float)(Delay /* - Epsilon */) / 1000.0f, [this, Position, StartTime](void)
+		Parent.Schedule((float)(SystemTime - Now /* - Epsilon */) / 1000.0f, [this, Position, StartTime](void)
 		{
 			libvlc_media_player_play(Engine.VLCMediaPlayer);
 			libvlc_media_player_set_time(Engine.VLCMediaPlayer, *Position);
