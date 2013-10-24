@@ -1166,7 +1166,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 					assert(Length > 0);
 					for (unsigned int Index = 0; Index < Length; ++Index)
 					{
-						if ((Index >= 0) && (Command[Index] == ' ')) break;
+						if (Command[Index] == ' ') break;
 						if (Command[Index] != Key[Index]) return false;
 					}
 					return true;
@@ -1201,13 +1201,13 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 							Item.Title);
 				}
 				else if (Matches("quit") || Matches("exit")) { MainWindow->close(); return; }
-				else
-				{
-					ChatCursor->insertText("Unknown command.\n");
-					ChatDisplay->setTextCursor(*ChatCursor);
-				}
+				else SharedWrite("Unknown command.\n");
 			}
-			else Core->Chat(Message);
+			else
+			{
+				SharedWrite(Message);
+				Core->Chat(Message);
+			}
 			ChatEntry->setText("");
 		});
 

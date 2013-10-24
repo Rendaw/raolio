@@ -66,17 +66,21 @@ int main(int argc, char **argv)
 	{
 		if (CommandIndex + 1 >= argc)
 		{
-			std::cerr << "--play requires a hash, in hex, lowercase, no spaces or other delimiters." << std::endl;
+			std::cerr << "--play requires a filename." << std::endl;
 			goto FullBreak;
 		}
-		auto Hash = UnformatHash(argv[CommandIndex + 1]);
+		auto Hash = HashFile(argv[CommandIndex + 1]);
 		if (!Hash)
 		{
-			std::cerr << "Invalid hash provided for --play." << std::endl;
+			std::cerr << "Invalid file to --play '" << argv[CommandIndex + 1] << "'" << std::endl;
 			goto FullBreak;
 		}
 
-		Core.Transfer([&, Hash](void) { Core.Play(*Hash, MediaTimeT(0), GetNow()); });
+		Core.Transfer([&, Hash](void)
+		{
+			Core.Add(Hash->first, Hash->second, argv[CommandIndex + 1]);
+			Core.Play(Hash->first, MediaTimeT(0), GetNow());
+		});
 	}
 	else if (Command == "--stop")
 	{

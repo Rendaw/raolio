@@ -113,7 +113,6 @@ void ClientCore::Chat(std::string const &Message)
 {
 	std::string QualifiedMessage = Handle + ": " + Message;
 	CallTransfer([=](void) { Parent.Chat(QualifiedMessage); });
-	if (LogCallback) LogCallback(QualifiedMessage);
 }
 
 struct VLCParsedUserData

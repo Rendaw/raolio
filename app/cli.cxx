@@ -4,8 +4,81 @@
 #include <csignal>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <glob.h>
+
+class StringSplitter
+{
+        public:
+                StringSplitter(std::set<char> const &Delimiters, bool DropBlanks) :
+			Delimiters(Delimiters), DropBlanks(DropBlanks), HotSlash(false), HotQuote(false) {}
+
+                StringSplitter &Process(std::string const &Input)
+		{
+			std::string Buffer;
+			Buffer.reserve(1000);
+
+		#ifdef WINDOWS
+			char const Slash = '^';
+		#else
+			char const Slash = '\\';
+		#endif
+			char const Quote = '"';
+			for (unsigned int CharacterIndex = 0; CharacterIndex < Input.length(); ++CharacterIndex)
+			{
+				char const &CurrentCharacter = Input[CharacterIndex];
+				if (!HotSlash)
+				{
+					if (CurrentCharacter == Slash)
+					{
+						HotSlash = true;
+						continue;
+					}
+
+					if (CurrentCharacter == Quote)
+					{
+						HotQuote = !HotQuote;
+						continue;
+					}
+				}
+
+				if (HotSlash)
+				{
+					HotSlash = false;
+				}
+
+				if (!HotQuote && (Delimiters.find(CurrentCharacter) != Delimiters.end()))
+				{
+					if (!DropBlanks || !Buffer.empty())
+						Out.push_back(Buffer);
+					Buffer.clear();
+					continue;
+				}
+
+				Buffer.push_back(CurrentCharacter);
+			}
+
+			if (!DropBlanks || !Buffer.empty())
+				Out.push_back(Buffer);
+
+			return *this;
+		}
+
+		bool Finished(void) // Open quotes or unused escape (at end of input)
+			{ return !HotSlash && !HotQuote; }
+
+                std::vector<std::string> &Results(void) { return Out; }
+	private:
+		std::set<char> const Delimiters;
+		bool DropBlanks;
+
+		bool HotSlash;
+		bool HotQuote;
+		std::vector<std::string> Out;
+};
 
 // Asynch logging and writing to the screen and stuff
+bool Alive = true;
+auto MainThread = pthread_self();
 std::mutex CallsMutex;
 std::vector<std::function<void(void)>> Calls;
 
@@ -13,7 +86,7 @@ void Async(std::function<void(void)> const &Call)
 {
 	std::lock_guard<std::mutex> Lock(CallsMutex);
 	Calls.push_back(Call);
-	raise(SIGALRM);
+	pthread_kill(MainThread, SIGALRM);
 }
 
 enum class PlaylistColumns
@@ -218,11 +291,12 @@ int main(int argc, char **argv)
 {
 	{
 		struct sigaction SignalAction{};
-		//SignalAction.sa_handler = SIG_IGN;
 		SignalAction.sa_handler = [](int) {};
 		sigaction(SIGALRM, &SignalAction, nullptr);
+		SignalAction.sa_handler = [](int) { Alive = false; };
+		sigaction(SIGINT, &SignalAction, nullptr);
 	}
-	
+
 	std::string Handle{"Dog"};
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
@@ -231,7 +305,6 @@ int main(int argc, char **argv)
 	if (argc >= 4) String(argv[3]) >> Port;
 
 	// Play state and stuff
-	bool Alive = true;
 	struct
 	{
 		void Request(void) { Count = 0u; }
@@ -249,9 +322,9 @@ int main(int argc, char **argv)
 		unsigned int Minutes = Time / 1000 / 60;
 		std::cout << "Time: " << Minutes << ":" << (Time / 1000 - (Minutes * 60)) << "\n";
 	}); };
-	Core.AddCallback = [&](MediaInfo Item) { Async([&](void) { Playlist.AddUpdate(Item); }); };
-	Core.UpdateCallback = [&](MediaInfo Item) { Async([&](void) { Playlist.AddUpdate(Item); }); };
-	Core.SelectCallback = [&](HashT const &MediaID) { Async([&](void)
+	Core.AddCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
+	Core.UpdateCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
+	Core.SelectCallback = [&](HashT const &MediaID) { Async([&, MediaID](void)
 	{
 		Volition.Ack();
 		bool WasSame = Playlist.Select(MediaID);
@@ -278,150 +351,270 @@ int main(int argc, char **argv)
 	Core.Open(false, Host, Port);
 
 	// Define commands
-	auto AddCommand = [&](std::string const &Line)
+	std::cout << "All commands start with 1 space." << std::endl;
+	std::cout << "Type ' help' for a list of commands." << std::endl;
+	std::map<std::string, std::function<void(std::string const &Line)>> Commands;
 	{
-		std::cout << "Add: " << Line << "\n";
-	};
-	auto ListCommand = [&](std::string const &Line)
-	{
-		size_t Index = 0;
-		for (auto const &Item : Playlist.GetItems())
-			std::cout <<
-				((Item.State == PlayState::Play) ? "> " :
-					((Item.State == PlayState::Pause) ? "= " :
-						"  ")) <<
-				(Index++) << ". " <<
-				Item.Title <<
-				"\n";
-	};
-	auto SortCommand = [&](std::string const &Line)
-	{
-		std::cout << "Sort: " << Line << "\n";
-	};
-	auto ShuffleCommand = [&](std::string const &Line)
-	{
-		Playlist.Shuffle();
-		ListCommand({});
-	};
-	auto SelectCommand = [&](std::string const &Line)
-	{
-		size_t Index = 0;
-		static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
-		if (Parse(Line, Index))
+		auto AddCommand = [&](std::string const &Line)
 		{
-			auto SelectID = Playlist.GetID(Index);
-			if (!SelectID) return;
-			Volition.Request();
-			Core.Play(*SelectID, 0ul);
-		}
-		else std::cout << "No index specified." << "\n";
-	};
-	auto NextCommand = [&](std::string const &Line)
-	{
-		auto NextID = Playlist.GetNextID();
-		if (!NextID) return;
-		Volition.Request();
-		Core.Play(*NextID, 0ul);
-	};
-	auto BackCommand = [&](std::string const &Line)
-	{
-		auto PreviousID = Playlist.GetPreviousID();
-		if (!PreviousID) return;
-		Volition.Request();
-		Core.Play(*PreviousID, 0ul);
-	};
-	auto PlayCommand = [&](std::string const &Line)
-	{
-		uint64_t Minutes = 0;
-		uint64_t Seconds = 0;
-		static Regex::Parser<uint64_t, uint64_t> Parse("\\s*(\\d+):(\\d+)$");
-		if (Parse(Line, Minutes, Seconds))
-		{
-			auto CurrentID = Playlist.GetCurrentID();
-			if (CurrentID)
+			StringSplitter Splitter{{' '}, true};
+			Splitter.Process(Line);
+			for (auto Pattern : Splitter.Results())
 			{
-				Volition.Maintain();
-				Core.Play(*CurrentID, MediaTimeT((Minutes * 60 + Seconds) * 1000));
-			}
-		}
-		else Core.Play();
-	};
-	auto StopCommand = [&](std::string const &Line) { Core.Stop(); };
-	auto QuitCommand = [&](std::string const &Line) { Alive = false; };
-	auto NowCommand = [&](std::string const &Line) { Core.GetTime(); };
+				glob_t Globbed;
+				int Result = glob(Pattern.c_str(), GLOB_TILDE, nullptr, &Globbed);
+				if (Result != 0)
+				{
+					std::cerr << "Invalid file '" << Pattern << "'" << std::endl;
+					continue;
+				}
 
-	std::map<std::string, std::function<void(std::string const &Line)>> Commands
-	{
-		{"add", AddCommand},
-		{"list", ListCommand},
-		{"ls", ListCommand},
-		{"sort", SortCommand},
-		{"shuffle", ShuffleCommand},
-		{"select", SelectCommand},
-		{"next", NextCommand},
-		{"back", BackCommand},
-		{"previous", BackCommand},
-		{"play", PlayCommand},
-		{"stop", StopCommand},
-		{"pause", StopCommand},
-		{"quit", QuitCommand},
-		{"exit", QuitCommand},
-		{"now", NowCommand}
-	};
-	
-	std::thread Throd{[&](void) { while (true) { Async([](void) { std::cout << "Hi" << std::endl; }); sleep(5); } }};
+				for (decltype(Globbed.gl_pathc) Index = 0; Index < Globbed.gl_pathc; ++Index)
+				{
+					auto Filename = Globbed.gl_pathv[Index];
+					auto Hash = HashFile(Filename);
+					assert(Hash);
+					if (!Hash) break;
+					Core.Add(Hash->first, Hash->second, Filename);
+				}
+			}
+		};
+		auto ListCommand = [&](std::string const &Line)
+		{
+			bool Artist = false;
+			bool Album = false;
+			bool TrackNumber = false;
+			StringSplitter Splitter{{' '}, true};
+			Splitter.Process(Line);
+			for (auto Column : Splitter.Results())
+			{
+				if ((Column == "-a") || (Column == "--all"))
+				{
+					Artist = true;
+					Album = true;
+					TrackNumber = true;
+					break;
+				}
+				if (Column == "artist") Artist = true;
+				else if (Column == "album") Album = true;
+				else if (Column == "track") TrackNumber = true;
+			}
+			size_t Index = 0;
+			for (auto const &Item : Playlist.GetItems())
+			{
+				std::cout <<
+					((Item.State == PlayState::Play) ? "> " :
+						((Item.State == PlayState::Pause) ? "= " :
+							"  ")) <<
+					(Index++) << ". ";
+				if (Album) std::cout << Item.Album;
+				if (TrackNumber && Item.Track)
+				{
+					if (Album) std::cout << "/";
+					std::cout << *Item.Track;
+				}
+				if (Album || TrackNumber) std::cout << " - ";
+				if (Artist) std::cout << Item.Artist << " - ";
+				std::cout <<
+					Item.Title <<
+					"\n";
+			}
+		};
+		auto SortCommand = [&](std::string const &Line)
+		{
+			std::list<PlaylistType::SortFactor> Factors;
+			StringSplitter Splitter{{' '}, true};
+			Splitter.Process(Line);
+			for (auto Column : Splitter.Results())
+			{
+				if (Column == "artist") Factors.emplace_back(PlaylistColumns::Artist, false);
+				else if (Column == "-artist") Factors.emplace_back(PlaylistColumns::Artist, true);
+				else if (Column == "album") Factors.emplace_back(PlaylistColumns::Album, false);
+				else if (Column == "-album") Factors.emplace_back(PlaylistColumns::Album, true);
+				else if (Column == "track") Factors.emplace_back(PlaylistColumns::Track, false);
+				else if (Column == "-track") Factors.emplace_back(PlaylistColumns::Track, true);
+				else if (Column == "title") Factors.emplace_back(PlaylistColumns::Title, false);
+				else if (Column == "-title") Factors.emplace_back(PlaylistColumns::Title, true);
+			}
+			Playlist.Sort(Factors);
+			ListCommand("-a");
+		};
+		auto ShuffleCommand = [&](std::string const &Line)
+		{
+			Playlist.Shuffle();
+			ListCommand("-a");
+		};
+		auto SelectCommand = [&](std::string const &Line)
+		{
+			size_t Index = 0;
+			static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+			if (Parse(Line, Index))
+			{
+				auto SelectID = Playlist.GetID(Index);
+				if (!SelectID) return;
+				Volition.Request();
+				Core.Play(*SelectID, 0ul);
+			}
+			else std::cout << "No index specified." << "\n";
+		};
+		auto NextCommand = [&](std::string const &Line)
+		{
+			auto NextID = Playlist.GetNextID();
+			if (!NextID) return;
+			Volition.Request();
+			Core.Play(*NextID, 0ul);
+		};
+		auto BackCommand = [&](std::string const &Line)
+		{
+			auto PreviousID = Playlist.GetPreviousID();
+			if (!PreviousID) return;
+			Volition.Request();
+			Core.Play(*PreviousID, 0ul);
+		};
+		auto PlayCommand = [&](std::string const &Line)
+		{
+			uint64_t Minutes = 0;
+			uint64_t Seconds = 0;
+			static Regex::Parser<uint64_t, uint64_t> Parse("\\s*(\\d+):(\\d+)$");
+			if (Parse(Line, Minutes, Seconds))
+			{
+				auto CurrentID = Playlist.GetCurrentID();
+				if (CurrentID)
+				{
+					Volition.Maintain();
+					Core.Play(*CurrentID, MediaTimeT((Minutes * 60 + Seconds) * 1000));
+				}
+			}
+			else Core.Play();
+		};
+		auto VolumeCommand = [&](std::string const &Line)
+		{
+			uint64_t Volume = 0;
+			static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
+			if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
+			else std::cout << "Bad volume.\n";
+		};
+		auto StopCommand = [&](std::string const &Line) { Core.Stop(); };
+		auto QuitCommand = [&](std::string const &Line) { Alive = false; };
+		auto NowCommand = [&](std::string const &Line) { Core.GetTime(); };
+		auto HelpCommand = [&](std::string const &Line)
+		{
+			std::string Topic;
+			String(Line) >> Topic;
+			if (Topic == "help")
+			{
+				std::cout << "' help'\tList all commands.\n";
+				std::cout << "' help COMMAND'\tList help for COMMAND if available.\n";
+			}
+			else if (Topic == "add")
+				std::cout << "' add PATTERN...'\tAdds all filenames matching any PATTERN to playlist.\n";
+			else if (Topic == "select")
+				std::cout << "' select INDEX'\tPlays media at playlist INDEX.  Use list or ls to see indices.\n";
+			else if (Topic == "volume")
+				std::cout << "' volume VALUE'\tSets volume to VALUE.  Value must be in the range [0,100].\n";
+			else if (Topic == "play")
+				std::cout << "' play [TIME]'\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n";
+			else if ((Topic == "list") || (Topic == "ls"))
+				std::cout << "' list [-a][-all] [artist] [album] [track]'\n"
+					"\tLists all media in playlist, displaying columns as specified.\n";
+			else if (Topic == "sort")
+				std::cout << "' sort [-][artist|album|track|title]...'\n"
+					"\tSorts playlist by the specified columns, with increasing specifity. - reverses column order.\n";
+			else if (Topic.empty())
+			{
+				size_t Count = 0;
+				for (auto const &Command : Commands)
+				{
+					std::cout << "' " << Command.first << "'\t";
+					if (Count++ % 6 == 5) std::cout << "\n";
+				}
+				std::cout << std::endl;
+			}
+			else std::cout << "No help available.\n";
+		};
+
+		Commands["add"] = AddCommand;
+		Commands["list"] = ListCommand;
+		Commands["ls"] = ListCommand;
+		Commands["sort"] = SortCommand;
+		Commands["shuffle"] = ShuffleCommand;
+		Commands["select"] = SelectCommand;
+		Commands["next"] = NextCommand;
+		Commands["back"] = BackCommand;
+		Commands["previous"] = BackCommand;
+		Commands["play"] = PlayCommand;
+		Commands["stop"] = StopCommand;
+		Commands["pause"] = StopCommand;
+		Commands["quit"] = QuitCommand;
+		Commands["exit"] = QuitCommand;
+		Commands["volume"] = VolumeCommand;
+		Commands["now"] = NowCommand;
+		Commands["help"] = HelpCommand;
+		Commands["?"] = HelpCommand;
+	}
 
 	// Readline loop
-	rl_getc_function = [](FILE *File) 
-	{ 
+	rl_getc_function = [](FILE *File)
+	{
 		int Out = 0;
-		auto Result = read(fileno(File), &Out, 1);
-		std::cout << "=" << Result << ", " << (int)Out << "\n"; 
-		if (Result == -1 && errno == EINTR) std::cout << "EINTR" << std::endl;
+		int Result = 0;
+		do
+		{
+			char* saved_line;
+			int saved_point;
+			saved_point = rl_point;
+			saved_line = rl_copy_text(0, rl_end);
+			rl_set_prompt("");
+			rl_replace_line("", 0);
+			rl_redisplay();
+
+			{
+				std::lock_guard<std::mutex> Lock(CallsMutex);
+				for (auto const &Call : Calls) Call();
+				Calls.clear();
+			}
+
+			rl_set_prompt("");
+			rl_replace_line(saved_line, 0);
+			rl_point = saved_point;
+			rl_redisplay();
+
+			Result = read(fileno(File), &Out, 1);
+		} while (Alive && (Result == -1) && (errno == EINTR));
 		if (Result != 1) Out = EOF;
 		return Out;
 	};
 	while (Alive)
 	{
-		{
-			std::lock_guard<std::mutex> Lock(CallsMutex);
-			for (auto const &Call : Calls) Call();
-			Calls.clear();
-		}
-		
-		std::cout << "a" << std::endl;
-		std::unique_ptr<char[], void (*)(void *)> Line{readline("This is my prompt: "), &std::free};
-		std::cout << "b" << std::endl;
-		
+		std::unique_ptr<char[], void (*)(void *)> Line{readline(""), &std::free};
+
 		if (!Line) continue;
 
 		if (Line[0] == 0) continue;
 
-		std::cout << "Line:" << Line.get() << std::endl;
-
 		if (Line[0] != ' ')
 		{
-			std::cout << "c" << std::endl;
 			Core.Chat(Line.get());
-			std::cout << "d" << std::endl;
 			continue;
 		}
 
 		add_history(Line.get());
 
-		auto Found = Commands.lower_bound(&Line[1]);
+		size_t CutIndex = 1;
+		for (; Line[CutIndex] != 0; ++CutIndex)
+			if (Line[CutIndex] == ' ') break;
+		std::string Command{&Line[1], CutIndex - 1};
+		auto Found = Commands.lower_bound(Command);
 
 		if ((Found == Commands.end()) ||
-			(Line[1] != Found->first[0]))
+			(Command[0] != Found->first[0]))
 		{
 			std::cout << "Unknown command.\n";
 			continue;
 		}
+		assert(Found != Commands.end());
 
-		size_t Start = 1;
-		for (; (Line[Start] != 0) && (Line[Start] != ' '); ++Start) {};
-		Found->second(&Line[Start]);
-		std::cout << "e" << std::endl;
+		Found->second(&Line[CutIndex]);
 	}
 
 	return 0;
