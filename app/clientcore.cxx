@@ -187,7 +187,7 @@ void ClientCore::PlayInternal(HashT const &MediaID, MediaTimeT Position, uint64_
 	if (Now >= SystemTime)
 	{
 		libvlc_media_player_play(Engine.VLCMediaPlayer);
-		libvlc_media_player_set_time(Engine.VLCMediaPlayer, *Position);
+		libvlc_media_player_set_time(Engine.VLCMediaPlayer, *Position + (Now - SystemTime));
 	}
 	else
 	{
