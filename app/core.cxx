@@ -115,7 +115,7 @@ bool CoreConnection::IdleWrite(void)
 		{
 			Data.resize(static_cast<size_t>(Read));
 			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
-			//if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
 			Assert((Read == ChunkSize) || (Response.File.eof()));
 			++Response.Chunk;
 			if (!Response.File.eof()) return true;
@@ -128,7 +128,7 @@ bool CoreConnection::IdleWrite(void)
 
 void CoreConnection::HandleTimer(uint64_t const &Now)
 {
-	//Send(NP1V1Clock{}, Parent.ID, Now - 5000);
+	Send(NP1V1Clock{}, Parent.ID, Now - 5000);
 
 	if (Request.File.is_open() && ((GetNow() - Request.LastResponse) > 10 * 1000))
 	{

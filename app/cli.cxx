@@ -319,8 +319,8 @@ int main(int argc, char **argv)
 	Core.LogCallback = [](std::string const &Message) { Async([=](void) { std::cout << Message << "\n"; }); };
 	Core.SeekCallback = [&](float Time) { Async([=](void)
 	{
-		unsigned int Minutes = Time / 1000 / 60;
-		std::cout << "Time: " << Minutes << ":" << (Time / 1000 - (Minutes * 60)) << "\n";
+		unsigned int Minutes = Time / 60;
+		std::cout << "Time: " << Minutes << ":" << ((unsigned int)Time - (Minutes * 60)) << "\n";
 	}); };
 	Core.AddCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
 	Core.UpdateCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };

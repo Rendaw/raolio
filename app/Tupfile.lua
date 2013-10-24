@@ -40,7 +40,7 @@ then
 
 	local PackageDependencies = PackageDependencies ..
 		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3'" or '') ..
-		(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libboost-all-dev (>= 1.53.0-6), libev4 (>= 1.4.11-1)' or '')
+		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', libqt5core5 (>= 5.0.2), libqt5widgets5 (>= 5.0.2), libqt5gui5 (>= 5.0.2), libvlc5 (>= 2.0.8-1)' or '')
 	Package = Define.Package
 	{
 		Name = 'raoliogui',
@@ -94,7 +94,7 @@ then
 
 	local PackageDependencies = PackageDependencies ..
 		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'readline>=6.2.004-1'" or '') ..
-		(tup.getconfig 'PLATFORM' == 'ubuntu' and '' or '')
+		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', readline6 (>= 6.2-9)' or '')
 	Package = Define.Package
 	{
 		Name = 'raoliocli',
