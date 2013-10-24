@@ -67,7 +67,7 @@ struct ClientCore
 	ClientCore(std::string const &Handle, float Volume);
 
 	std::function<void(std::string const &Message)> LogCallback;
-	std::function<void(float Time)> SeekCallback;
+	std::function<void(float Percent, float Duration)> SeekCallback;
 	std::function<void(MediaInfo Item)> AddCallback;
 	std::function<void(MediaInfo Item)> UpdateCallback;
 	std::function<void(HashT const &MediaID)> SelectCallback;

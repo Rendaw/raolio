@@ -79,7 +79,16 @@ void ClientCore::SetVolume(float Volume)
 	{ CallTransfer([=](void) { SetVolumeInternal(Volume); }); }
 
 void ClientCore::GetTime(void)
-	{ CallTransfer([=](void) { if (SeekCallback) SeekCallback(GetTimeInternal()); }); }
+{
+	CallTransfer([=](void)
+	{
+		if (SeekCallback)
+		{
+			float Duration = Playing ? libvlc_media_get_duration(Playing->VLCMedia) / 1000.0f : 0.0f;
+			SeekCallback(GetTimeInternal(), Duration);
+		}
+	});
+}
 
 void ClientCore::Play(HashT const &MediaID, MediaTimeT Position)
 	{ CallTransfer([=](void) { LocalPlayInternal(MediaID, Position); }); }

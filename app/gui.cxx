@@ -1103,8 +1103,8 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 
 		Core->LogCallback = [=](std::string const &Message)
 			{ CrossThread->Transfer([=](void) { SharedWrite(Message); }); };
-		Core->SeekCallback = [=](float Time) { CrossThread->Transfer([=](void)
-			{ if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Time * 10000)); }); };
+		Core->SeekCallback = [=](float Percent, float Duration) { CrossThread->Transfer([=](void)
+			{ if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Percent * 10000)); }); };
 		Core->AddCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->UpdateCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->SelectCallback = [=](HashT const &MediaID)

@@ -317,8 +317,9 @@ int main(int argc, char **argv)
 
 	ClientCore Core{Handle, 0.75f};
 	Core.LogCallback = [](std::string const &Message) { Async([=](void) { std::cout << Message << "\n"; }); };
-	Core.SeekCallback = [&](float Time) { Async([=](void)
+	Core.SeekCallback = [&](float Percent, float Duration) { Async([=](void)
 	{
+		auto Time = Duration * Percent;
 		unsigned int Minutes = Time / 60;
 		std::cout << "Time: " << Minutes << ":" << ((unsigned int)Time - (Minutes * 60)) << "\n";
 	}); };
