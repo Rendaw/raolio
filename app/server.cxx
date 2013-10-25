@@ -14,7 +14,15 @@ int main(int argc, char **argv)
 
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
-	if (argc >= 2) Host = argv[1];
+	if (argc >= 2)
+	{
+		Host = argv[1];
+		if ((Host == "--help") || (Host == "-h"))
+		{
+			std::cout << "raolioserver [HOST] [PORT]" << std::endl;
+			return 0;
+		}
+	}
 	if (argc >= 3) String(argv[2]) >> Port;
 	Core Core{true};
 	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)

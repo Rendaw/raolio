@@ -438,36 +438,13 @@ struct PositionSliderType : QSlider
 		}
 };
 
-enum class PlaylistColumns
-{
-	Track,
-	Artist,
-	Album,
-	Title
-};
-
-enum struct PlayState { Deselected, Pause, Play };
-
-struct PlaylistType : QAbstractItemModel
+struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 {
 	private:
 		std::vector<PlaylistColumns> Columns;
-		struct PlaylistInfo
-		{
-			HashT Hash;
-			PlayState State;
-			Optional<uint16_t> Track;
-			std::string Title;
-			std::string Album;
-			std::string Artist;
-			PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
-			PlaylistInfo(void) {}
-		};
-		std::vector<PlaylistInfo> Playlist;
-		Optional<size_t> Index;
 	public:
 
-	PlaylistType(void) : Index{}
+	GUIPlaylistType(void)
 	{
 		int const ColumnRows = Settings->beginReadArray(SCColumns);
 		if (ColumnRows == 0)
@@ -502,28 +479,19 @@ struct PlaylistType : QAbstractItemModel
 		Settings->endArray();
 	}
 
-	Optional<size_t> Find(HashT const &Hash)
-	{
-		for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
-		return {};
-	}
-
 	void AddUpdate(MediaInfo const &Item)
 	{
 		auto Found = Find(Item.Hash);
 		if (!Found)
 		{
 			beginInsertRows(QModelIndex(), Playlist.size() - 1, Playlist.size() - 1);
-			Playlist.emplace_back(Item.Hash, PlayState::Deselected, Item.Track, Item.Title, Item.Album, Item.Artist);
+			PlaylistType::AddUpdate(Item);
 			endInsertRows();
 			if (SignalUnsorted) SignalUnsorted();
 		}
 		else
 		{
-			Playlist[*Found].Track = Item.Track;
-			Playlist[*Found].Title = Item.Title;
-			Playlist[*Found].Album = Item.Album;
-			Playlist[*Found].Artist = Item.Artist;
+			PlaylistType::AddUpdate(Item);
 			dataChanged(createIndex(*Found, 0), createIndex(*Found, columnCount()));
 		}
 	}
@@ -532,160 +500,46 @@ struct PlaylistType : QAbstractItemModel
 	{
 		auto Found = Find(Hash);
 		if (!Found) return;
-		if (Index && (*Found == *Index)) Index = {};
 		beginRemoveRows(QModelIndex(), *Found, *Found);
-		Playlist.erase(Playlist.begin() + *Found);
+		PlaylistType::Remove(Hash);
 		endRemoveRows();
 	}
 
 	bool Select(HashT const &Hash)
 	{
-		auto Found = Find(Hash);
-		if (!Found) return true;
-		if (Index)
-		{
-			Playlist[*Index].State = PlayState::Deselected;
-			dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
-		}
-		bool Out = Index == Found;
-		Index = *Found;
-		Playlist[*Index].State = PlayState::Pause;
-		dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
+		if (Index) dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
+		auto const Out = Select(Hash);
+		if (Index) dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
 		return Out;
-	}
-
-	Optional<bool> IsPlaying(void)
-	{
-		if (!Index) return {};
-		return Playlist[*Index].State == PlayState::Play;
-	}
-
-	HashT GetID(int Row) const
-	{
-		assert(Row >= 0);
-		assert(Row < Playlist.size());
-		return Playlist[Row].Hash;
-	}
-
-	Optional<HashT> GetCurrentID(void) const
-	{
-		if (!Index) return {};
-		return Playlist[*Index].Hash;
-	}
-
-	Optional<PlaylistInfo> GetCurrent(void) const
-	{
-		if (!Index) return {};
-		return Playlist[*Index];
-	}
-
-	std::vector<PlaylistInfo> const &GetItems(void) const { return Playlist; }
-
-	Optional<HashT> GetNextID(void) const
-	{
-		if (!Index)
-		{
-			if (Playlist.empty()) return {};
-			else return Playlist.front().Hash;
-		}
-		else
-		{
-			if (*Index + 1 >= Playlist.size())
-				return Playlist.front().Hash;
-			return Playlist[*Index + 1].Hash;
-		}
-	}
-
-	Optional<HashT> GetPreviousID(void) const
-	{
-		if (!Index)
-		{
-			if (Playlist.empty()) return {};
-			else return Playlist.back().Hash;
-		}
-		else
-		{
-			if (*Index == 0)
-				return Playlist.back().Hash;
-			return Playlist[*Index - 1].Hash;
-		}
 	}
 
 	void Play(void)
 	{
+		PlaylistType::Play();
 		if (!Index) return;
-		Playlist[*Index].State = PlayState::Play;
 		dataChanged(createIndex(*Index, 0), createIndex(*Index, 0));
 	}
 
 	void Stop(void)
 	{
+		PlaylistType::Stop();
 		if (!Index) return;
-		Playlist[*Index].State = PlayState::Pause;
 		dataChanged(createIndex(*Index, 0), createIndex(*Index, 0));
 	}
 
 	void Shuffle(void)
 	{
-		HashT CurrentID;
-		if (Index)
-		{
-			assert(*Index < Playlist.size());
-			CurrentID = Playlist[*Index].Hash;
-		}
 		layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
-		std::random_shuffle(Playlist.begin(), Playlist.end());
+		PlaylistType::Shuffle();
 		layoutChanged({}, QAbstractItemModel::VerticalSortHint);
 		if (SignalUnsorted) SignalUnsorted();
-		auto Found = Find(CurrentID);
-		if (Found) Index = *Found;
 	}
 
-	struct SortFactor
-	{
-		PlaylistColumns Column;
-		bool Reverse;
-		SortFactor(PlaylistColumns const Column, bool const Reverse) : Column{Column}, Reverse{Reverse} {}
-	};
 	void Sort(std::list<SortFactor> const &Factors)
 	{
-		HashT CurrentID;
-		if (Index)
-		{
-			assert(*Index < Playlist.size());
-			CurrentID = Playlist[*Index].Hash;
-		}
 		layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
-		std::stable_sort(Playlist.begin(), Playlist.end(), [&Factors](PlaylistInfo const &First, PlaylistInfo const &Second)
-		{
-			for (auto &Factor : Factors)
-			{
-				auto const Fix = [&Factor](bool const Verdict) { if (Factor.Reverse) return !Verdict; return Verdict; };
-				switch (Factor.Column)
-				{
-					case PlaylistColumns::Track:
-						if (First.Track == Second.Track) continue;
-						if (!First.Track) return Fix(true);
-						if (!Second.Track) return Fix(false);
-						return Fix(*First.Track < *Second.Track);
-					case PlaylistColumns::Title:
-						if (First.Title == Second.Title) continue;
-						return Fix(First.Title < Second.Title);
-					case PlaylistColumns::Album:
-						if (First.Album == Second.Album) continue;
-						return Fix(First.Album < Second.Album);
-					case PlaylistColumns::Artist:
-						if (First.Artist == Second.Artist) continue;
-						return Fix(First.Artist < Second.Artist);
-					default: assert(false); continue;
-				}
-			}
-			return false;
-		});
+		PlaylistType::Sort(Factors);
 		layoutChanged({}, QAbstractItemModel::VerticalSortHint);
-		if (SignalUnsorted) SignalUnsorted();
-		auto Found = Find(CurrentID);
-		if (Found) Index = *Found;
 	}
 
 	QModelIndex index(int Row, int Column, QModelIndex const &Parent) const override { return createIndex(Row, Column); }
@@ -884,7 +738,7 @@ struct PlaylistType : QAbstractItemModel
 	}
 };
 
-void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Port)
+void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint16_t Port)
 {
 	try
 	{
@@ -899,9 +753,10 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 
 		struct PlayerDataType
 		{
-			PlayerDataType(std::string const &Handle, float Volume) : Core{Handle, Volume} {}
+			PlayerDataType(std::string const &Handle, float Volume) : Core{Volume}, Handle{Handle} {}
 			ClientCore Core;
-			PlaylistType Playlist;
+			std::string Handle;
+			GUIPlaylistType Playlist;
 			struct
 			{
 				void Request(void) { Count = 0u; }
@@ -920,9 +775,9 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 				AddIcon{RESOURCELOCATION "/add.png"},
 				SortIcon{RESOURCELOCATION "/sort.png"};
 		};
-		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(Handle, InitialVolume));
+		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(InitialHandle, InitialVolume));
 		auto Core = &PlayerData->Data->Core;
-		Core->SetVolume(InitialVolume);
+		auto Handle = &PlayerData->Data->Handle;
 		auto Playlist = &PlayerData->Data->Playlist;
 		auto Volition = &PlayerData->Data->Volition;
 		auto VolumeIcon = &PlayerData->Data->VolumeIcon;
@@ -1201,12 +1056,18 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 							Item.Title);
 				}
 				else if (Matches("quit") || Matches("exit")) { MainWindow->close(); return; }
+				else if (Matches("handle") || Matches("nick"))
+				{
+					std::string NewHandle;
+					String(Command) >> NewHandle >> NewHandle;
+					*Handle = NewHandle;
+				}
 				else SharedWrite("Unknown command.\n");
 			}
 			else
 			{
 				SharedWrite(Message);
-				Core->Chat(Message);
+				Core->Chat(*Handle + ": " + Message);
 			}
 			ChatEntry->setText("");
 		});
@@ -1311,7 +1172,12 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 		});
 
 		QObject::connect(PlaylistView, &QAbstractItemView::doubleClicked, [=](QModelIndex const &Index)
-			{ Volition->Request(); Core->Play(Playlist->GetID(Index.row()), 0ul); });
+		{
+			auto ID = Playlist->GetID(Index.row());
+			if (!ID) return;
+			Volition->Request();
+			Core->Play(*ID, 0ul);
+		});
 
 		QObject::connect(Position, &QSlider::sliderReleased, [=](void)
 		{

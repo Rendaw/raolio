@@ -64,7 +64,7 @@ struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
-	ClientCore(std::string const &Handle, float Volume);
+	ClientCore(float Volume);
 
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(float Percent, float Duration)> SeekCallback;
@@ -113,8 +113,57 @@ struct ClientCore
 		MediaTimePercentT LastPosition;
 
 		LatencyTracker Latencies;
+};
 
-		std::string const Handle;
+enum class PlaylistColumns
+{
+	Track,
+	Artist,
+	Album,
+	Title
+};
+
+enum struct PlayState { Deselected, Pause, Play };
+
+struct PlaylistType
+{
+	protected:
+		struct PlaylistInfo
+		{
+			HashT Hash;
+			PlayState State;
+			Optional<uint16_t> Track;
+			std::string Title;
+			std::string Album;
+			std::string Artist;
+			PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist);
+			PlaylistInfo(void);
+		};
+		std::vector<PlaylistInfo> Playlist;
+		Optional<size_t> Index;
+	public:
+
+	Optional<size_t> Find(HashT const &Hash);
+	void AddUpdate(MediaInfo const &Item);
+	void Remove(HashT const &Hash);
+	bool Select(HashT const &Hash);
+	Optional<bool> IsPlaying(void);
+	Optional<HashT> GetID(size_t Row) const;
+	Optional<HashT> GetCurrentID(void) const;
+	Optional<PlaylistInfo> GetCurrent(void) const;
+	std::vector<PlaylistInfo> const &GetItems(void) const;
+	Optional<HashT> GetNextID(void) const;
+	Optional<HashT> GetPreviousID(void) const;
+	void Play(void);
+	void Stop(void);
+	void Shuffle(void);
+	struct SortFactor
+	{
+		PlaylistColumns Column;
+		bool Reverse;
+		SortFactor(PlaylistColumns const Column, bool const Reverse);
+	};
+	void Sort(std::list<SortFactor> const &Factors);
 };
 
 #endif

@@ -12,7 +12,8 @@ h2 { font-size: 1em; }
 #body { background-color: rgb(255, 255, 255); min-height: 100%; width: 600px; margin-left: auto; margin-right: 35%; }
 div.block { width: 260px; height: 260px; margin: 10px; padding: 10px; display: flex; align-items: center; justify-content: center; background-color: rgb(158, 214, 247); float: left; }
 div.block.color2 { background-color: rgb(236, 247, 253); }
-a { display: block; text-decoration: none; width: 100%; text-align: center; color: rgb(133, 86, 247); }
+a { text-decoration: none; width: 100%; color: rgb(133, 86, 247); }
+.block { display: block; text-align: center; }
 a:hover { text-decoration: underline; }
 img { vertical-align: bottom; width: 240px; height: 240px; }
 a img { border: 1px solid black; }
@@ -26,24 +27,22 @@ td { vertical-align: top; }
 <div id="body">
 	<div class="block"><img src="logo.png" alt="Raolio"></div>
 
-	<div class="block color2"><div><strong>Raolio</strong> is a media player that synchronizes playback with other connected Raolio media players.  Raolio is intended for private media performances in office or long-distance situations where turning the volume up really high isn't a solution.</div></div>
+	<div class="block color2"><div><strong>Raolio</strong> is a media player that synchronizes playback with other connected Raolio media players.  Raolio is intended for private media performances in office or long-distance situations where turning the volume up really high isn't a solution. <a class="block" href="https://github.com/Rendaw/raolio">Source</a><a class="block" href="http://zarbosoft.com/forum/index.php?board=10.0">Forums</a></div></div>
 
 	<div class="block"><div>
 		<h2>Get Raolio</h2>
-		The following are all currently available builds.  The latest update is Oct. 19, 2013.
-		<a href="raolio-0-1-x86_64.pkg.tar.xz">Version 0, Arch 64-bit</a>
+		The latest version is 0, updated Oct. 25, 2013.
+		<span class="block">Arch x64 <a href="raolioserver-0-1-x86_64.pkg.tar.xz">Server</a> <a href="raoliogui-0-1-x86_64.pkg.tar.xz">GUI</a> <a href="raoliocli-0-1-x86_64.pkg.tar.xz">CLI</a></span>
 		<!-- Can't build it for now: <a href="raolio_0_i386.deb">Version 0, Ubuntu 12+ 32-bit</a>-->
-		<a href="raolio_0_amd64.deb">Version 0, Ubuntu 13.10+ 64-bit</a>
+		<span class="block">Ubuntu x64 <a href="raolioserver_0_amd64.deb">Server</a> <a href="raoliogui_0_amd64.deb">GUI</a> <a href="raoliocli_0_amd64.deb">CLI</a></span>
 	</div></div>
 
 	<div class="block"><a href="screenshot1.png"><img src="screenshot1thumb.png" alt="Screenshot"></a></div>
 
 	<div class="block"><a href="screenshot2.png"><img src="screenshot2thumb.png" alt="Screenshot"></a></div>
 
-	<div class="block"><div><a href="https://github.com/Rendaw/raolio">Source</a><a href="http://zarbosoft.com/forum/index.php?board=10.0">Forums</a></div></div>
-
 	<div class="block color2"><div style="height: 100%;">
-		<h2>Keyboard</h2>
+		<h2>GUI Keyboard</h2>
 		<table>
 			<tr><td>alt a</td><td>Add files to playlist</td></tr>
 			<tr><td>alt left</td><td>Play previous song</td></tr>
@@ -53,21 +52,22 @@ td { vertical-align: top; }
 	</div></div>
 
 	<div class="block color2"><div style="height: 100%;">
-		<h2>Chat</h2>
+		<h2>GUI Chat</h2>
 		<table>
-			<tr><td>/a(dd)</td><td>Add files to playlist</td></tr>
-			<tr><td>/l(ist)<br>/ls</td><td>List songs in playlist</td></tr>
-			<tr><td>/n(ext)</td><td>Play next song</td></tr>
-			<tr><td>/b(ack)</td><td>Play previous song</td></tr>
-			<tr><td>/p(lay) (MIN:SEC)</td><td>Resume song if paused, play from MIN:SEC if specified.</td></tr>
-			<tr><td>/s(top)<br>/pa(use)</td><td>Pause playback.</td></tr>
-			<tr><td>/q(uit)<br>/e(xit)</td><td>Quit</td></tr>
+			<tr><td>/add</td><td>Add files to playlist</td></tr>
+			<tr><td>/list</td><td>List songs in playlist</td></tr>
+			<tr><td>/next</td><td>Play next song</td></tr>
+			<tr><td>/back</td><td>Play previous song</td></tr>
+			<tr><td>/play (MIN:SEC)</td><td>Resume song if paused, play from MIN:SEC if specified.</td></tr>
+			<tr><td>/stop</td><td>Pause playback.</td></tr>
+			<tr><td>/handle NAME</td><td>Change your name.</td></tr>
+			<tr><td>/quit</td><td>Quit</td></tr>
 		</table>
 	</div></div>
 
 	<div class="block"><div>
 		<div style="text-align: center;">&copy; 2013 Zarbosoft</div>
-		<a href="..">&lt; Zarbosoft</a>
+		<a class="block" href="..">&lt; Zarbosoft</a>
 	</div></div>
 
 	<br style="clear: both;">

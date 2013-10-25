@@ -89,204 +89,6 @@ void Async(std::function<void(void)> const &Call)
 	pthread_kill(MainThread, SIGALRM);
 }
 
-enum class PlaylistColumns
-{
-	Track,
-	Artist,
-	Album,
-	Title
-};
-
-enum struct PlayState { Deselected, Pause, Play };
-
-struct PlaylistType
-{
-	private:
-		struct PlaylistInfo
-		{
-			HashT Hash;
-			PlayState State;
-			Optional<uint16_t> Track;
-			std::string Title;
-			std::string Album;
-			std::string Artist;
-			PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
-			PlaylistInfo(void) {}
-		};
-		std::vector<PlaylistInfo> Playlist;
-		Optional<size_t> Index;
-	public:
-
-	Optional<size_t> Find(HashT const &Hash)
-	{
-		for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
-		return {};
-	}
-
-	void AddUpdate(MediaInfo const &Item)
-	{
-		auto Found = Find(Item.Hash);
-		if (!Found)
-		{
-			Playlist.emplace_back(Item.Hash, PlayState::Deselected, Item.Track, Item.Title, Item.Album, Item.Artist);
-		}
-		else
-		{
-			Playlist[*Found].Track = Item.Track;
-			Playlist[*Found].Title = Item.Title;
-			Playlist[*Found].Album = Item.Album;
-			Playlist[*Found].Artist = Item.Artist;
-		}
-	}
-
-	void Remove(HashT const &Hash)
-	{
-		auto Found = Find(Hash);
-		if (!Found) return;
-		if (Index && (*Found == *Index)) Index = {};
-		Playlist.erase(Playlist.begin() + *Found);
-	}
-
-	bool Select(HashT const &Hash)
-	{
-		auto Found = Find(Hash);
-		if (!Found) return true;
-		if (Index)
-		{
-			Playlist[*Index].State = PlayState::Deselected;
-		}
-		bool Out = Index == Found;
-		Index = *Found;
-		Playlist[*Index].State = PlayState::Pause;
-		return Out;
-	}
-
-	Optional<bool> IsPlaying(void)
-	{
-		if (!Index) return {};
-		return Playlist[*Index].State == PlayState::Play;
-	}
-
-	Optional<HashT> GetID(size_t Row) const
-	{
-		if (Row >= Playlist.size()) return {};
-		return Playlist[Row].Hash;
-	}
-
-	Optional<HashT> GetCurrentID(void) const
-	{
-		if (!Index) return {};
-		return Playlist[*Index].Hash;
-	}
-
-	Optional<PlaylistInfo> GetCurrent(void) const
-	{
-		if (!Index) return {};
-		return Playlist[*Index];
-	}
-
-	std::vector<PlaylistInfo> const &GetItems(void) const { return Playlist; }
-
-	Optional<HashT> GetNextID(void) const
-	{
-		if (!Index)
-		{
-			if (Playlist.empty()) return {};
-			else return Playlist.front().Hash;
-		}
-		else
-		{
-			if (*Index + 1 >= Playlist.size())
-				return Playlist.front().Hash;
-			return Playlist[*Index + 1].Hash;
-		}
-	}
-
-	Optional<HashT> GetPreviousID(void) const
-	{
-		if (!Index)
-		{
-			if (Playlist.empty()) return {};
-			else return Playlist.back().Hash;
-		}
-		else
-		{
-			if (*Index == 0)
-				return Playlist.back().Hash;
-			return Playlist[*Index - 1].Hash;
-		}
-	}
-
-	void Play(void)
-	{
-		if (!Index) return;
-		Playlist[*Index].State = PlayState::Play;
-	}
-
-	void Stop(void)
-	{
-		if (!Index) return;
-		Playlist[*Index].State = PlayState::Pause;
-	}
-
-	void Shuffle(void)
-	{
-		HashT CurrentID;
-		if (Index)
-		{
-			assert(*Index < Playlist.size());
-			CurrentID = Playlist[*Index].Hash;
-		}
-		std::random_shuffle(Playlist.begin(), Playlist.end());
-		auto Found = Find(CurrentID);
-		if (Found) Index = *Found;
-	}
-
-	struct SortFactor
-	{
-		PlaylistColumns Column;
-		bool Reverse;
-		SortFactor(PlaylistColumns const Column, bool const Reverse) : Column{Column}, Reverse{Reverse} {}
-	};
-	void Sort(std::list<SortFactor> const &Factors)
-	{
-		HashT CurrentID;
-		if (Index)
-		{
-			assert(*Index < Playlist.size());
-			CurrentID = Playlist[*Index].Hash;
-		}
-		std::stable_sort(Playlist.begin(), Playlist.end(), [&Factors](PlaylistInfo const &First, PlaylistInfo const &Second)
-		{
-			for (auto &Factor : Factors)
-			{
-				auto const Fix = [&Factor](bool const Verdict) { if (Factor.Reverse) return !Verdict; return Verdict; };
-				switch (Factor.Column)
-				{
-					case PlaylistColumns::Track:
-						if (First.Track == Second.Track) continue;
-						if (!First.Track) return Fix(true);
-						if (!Second.Track) return Fix(false);
-						return Fix(*First.Track < *Second.Track);
-					case PlaylistColumns::Title:
-						if (First.Title == Second.Title) continue;
-						return Fix(First.Title < Second.Title);
-					case PlaylistColumns::Album:
-						if (First.Album == Second.Album) continue;
-						return Fix(First.Album < Second.Album);
-					case PlaylistColumns::Artist:
-						if (First.Artist == Second.Artist) continue;
-						return Fix(First.Artist < Second.Artist);
-					default: assert(false); continue;
-				}
-			}
-			return false;
-		});
-		auto Found = Find(CurrentID);
-		if (Found) Index = *Found;
-	}
-};
-
 int main(int argc, char **argv)
 {
 	{
@@ -300,7 +102,15 @@ int main(int argc, char **argv)
 	std::string Handle{"Dog"};
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
-	if (argc >= 2) Handle = argv[1];
+	if (argc >= 2)
+	{
+		Handle = argv[1];
+		if ((Handle == "--help") || (Handle == "-h"))
+		{
+			std::cout << "raoliocli [HANDLE] [HOST] [PORT]" << std::endl;
+			return 0;
+		}
+	}
 	if (argc >= 3) Host = argv[2];
 	if (argc >= 4) String(argv[3]) >> Port;
 
@@ -315,7 +125,7 @@ int main(int argc, char **argv)
 	} Volition;
 	PlaylistType Playlist;
 
-	ClientCore Core{Handle, 0.75f};
+	ClientCore Core{0.75f};
 	Core.LogCallback = [](std::string const &Message) { Async([=](void) { std::cout << Message << "\n"; }); };
 	Core.SeekCallback = [&](float Percent, float Duration) { Async([=](void)
 	{
@@ -354,9 +164,19 @@ int main(int argc, char **argv)
 	// Define commands
 	std::cout << "All commands start with 1 space." << std::endl;
 	std::cout << "Type ' help' for a list of commands." << std::endl;
-	std::map<std::string, std::function<void(std::string const &Line)>> Commands;
+	struct CommandT
 	{
-		auto AddCommand = [&](std::string const &Line)
+		CommandT(void) {}
+		CommandT(std::string const &Description, std::function<void(std::string const &Line)> const &Function) : Description(Description), Function(Function) {}
+		CommandT(std::function<void(std::string const &Line)> const &Function) : Function(Function) {}
+		std::string Description;
+		std::function<void(std::string const &Line)> Function;
+	};
+	std::map<std::string, CommandT> Commands;
+	Commands["add"] =
+	{
+		"' add PATTERN...'\tAdds all filenames matching any PATTERN to playlist.\n",
+		[&](std::string const &Line)
 		{
 			StringSplitter Splitter{{' '}, true};
 			Splitter.Process(Line);
@@ -379,8 +199,13 @@ int main(int argc, char **argv)
 					Core.Add(Hash->first, Hash->second, Filename);
 				}
 			}
-		};
-		auto ListCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["list"] =
+	{
+		"' list [-a][-all] [artist] [album] [track]'\n"
+		"\tLists all media in playlist, displaying columns as specified.\n",
+		[&](std::string const &Line)
 		{
 			bool Artist = false;
 			bool Album = false;
@@ -420,8 +245,14 @@ int main(int argc, char **argv)
 					Item.Title <<
 					"\n";
 			}
-		};
-		auto SortCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["ls"] = Commands["list"];
+	Commands["sort"] =
+	{
+		"' sort [-][artist|album|track|title]...'\n"
+		"\tSorts playlist by the specified columns, with increasing specifity. - reverses column order.\n",
+		[&](std::string const &Line)
 		{
 			std::list<PlaylistType::SortFactor> Factors;
 			StringSplitter Splitter{{' '}, true};
@@ -438,14 +269,21 @@ int main(int argc, char **argv)
 				else if (Column == "-title") Factors.emplace_back(PlaylistColumns::Title, true);
 			}
 			Playlist.Sort(Factors);
-			ListCommand("-a");
-		};
-		auto ShuffleCommand = [&](std::string const &Line)
+			Commands["list"].Function("-a");
+		}
+	};
+	Commands["shuffle"] =
+	{
+		[&](std::string const &Line)
 		{
 			Playlist.Shuffle();
-			ListCommand("-a");
-		};
-		auto SelectCommand = [&](std::string const &Line)
+			Commands["list"].Function("-a");
+		}
+	};
+	Commands["select"] =
+	{
+		"' select INDEX'\tPlays media at playlist INDEX.  Use list or ls to see indices.\n",
+		[&](std::string const &Line)
 		{
 			size_t Index = 0;
 			static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
@@ -457,22 +295,34 @@ int main(int argc, char **argv)
 				Core.Play(*SelectID, 0ul);
 			}
 			else std::cout << "No index specified." << "\n";
-		};
-		auto NextCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["next"] =
+	{
+		[&](std::string const &Line)
 		{
 			auto NextID = Playlist.GetNextID();
 			if (!NextID) return;
 			Volition.Request();
 			Core.Play(*NextID, 0ul);
-		};
-		auto BackCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["forward"] = Commands["next"];
+	Commands["back"] =
+	{
+		[&](std::string const &Line)
 		{
 			auto PreviousID = Playlist.GetPreviousID();
 			if (!PreviousID) return;
 			Volition.Request();
 			Core.Play(*PreviousID, 0ul);
-		};
-		auto PlayCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["previous"] = Commands["back"];
+	Commands["play"] =
+	{
+		"' play [TIME]'\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n",
+		[&](std::string const &Line)
 		{
 			uint64_t Minutes = 0;
 			uint64_t Seconds = 0;
@@ -487,41 +337,33 @@ int main(int argc, char **argv)
 				}
 			}
 			else Core.Play();
-		};
-		auto VolumeCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["volume"] =
+	{
+		"' volume VALUE'\tSets volume to VALUE.  Value must be in the range [0,100].\n",
+		[&](std::string const &Line)
 		{
 			uint64_t Volume = 0;
 			static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
 			if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
 			else std::cout << "Bad volume.\n";
-		};
-		auto StopCommand = [&](std::string const &Line) { Core.Stop(); };
-		auto QuitCommand = [&](std::string const &Line) { Alive = false; };
-		auto NowCommand = [&](std::string const &Line) { Core.GetTime(); };
-		auto HelpCommand = [&](std::string const &Line)
+		}
+	};
+	Commands["stop"] = { [&](std::string const &Line) { Core.Stop(); } };
+	Commands["pause"] = Commands["stop"];
+	Commands["quit"] = { [&](std::string const &Line) { Alive = false; } };
+	Commands["exit"] = Commands["quit"];
+	Commands["now"] = { [&](std::string const &Line) { Core.GetTime(); } };
+	Commands["help"] =
+	{
+		"' help'\tList all commands.\n"
+		"' help COMMAND'\tList help for COMMAND if available.\n",
+		[&](std::string const &Line)
 		{
 			std::string Topic;
 			String(Line) >> Topic;
-			if (Topic == "help")
-			{
-				std::cout << "' help'\tList all commands.\n";
-				std::cout << "' help COMMAND'\tList help for COMMAND if available.\n";
-			}
-			else if (Topic == "add")
-				std::cout << "' add PATTERN...'\tAdds all filenames matching any PATTERN to playlist.\n";
-			else if (Topic == "select")
-				std::cout << "' select INDEX'\tPlays media at playlist INDEX.  Use list or ls to see indices.\n";
-			else if (Topic == "volume")
-				std::cout << "' volume VALUE'\tSets volume to VALUE.  Value must be in the range [0,100].\n";
-			else if (Topic == "play")
-				std::cout << "' play [TIME]'\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n";
-			else if ((Topic == "list") || (Topic == "ls"))
-				std::cout << "' list [-a][-all] [artist] [album] [track]'\n"
-					"\tLists all media in playlist, displaying columns as specified.\n";
-			else if (Topic == "sort")
-				std::cout << "' sort [-][artist|album|track|title]...'\n"
-					"\tSorts playlist by the specified columns, with increasing specifity. - reverses column order.\n";
-			else if (Topic.empty())
+			if (Topic.empty())
 			{
 				size_t Count = 0;
 				for (auto const &Command : Commands)
@@ -531,28 +373,63 @@ int main(int argc, char **argv)
 				}
 				std::cout << std::endl;
 			}
-			else std::cout << "No help available.\n";
-		};
-
-		Commands["add"] = AddCommand;
-		Commands["list"] = ListCommand;
-		Commands["ls"] = ListCommand;
-		Commands["sort"] = SortCommand;
-		Commands["shuffle"] = ShuffleCommand;
-		Commands["select"] = SelectCommand;
-		Commands["next"] = NextCommand;
-		Commands["back"] = BackCommand;
-		Commands["previous"] = BackCommand;
-		Commands["play"] = PlayCommand;
-		Commands["stop"] = StopCommand;
-		Commands["pause"] = StopCommand;
-		Commands["quit"] = QuitCommand;
-		Commands["exit"] = QuitCommand;
-		Commands["volume"] = VolumeCommand;
-		Commands["now"] = NowCommand;
-		Commands["help"] = HelpCommand;
-		Commands["?"] = HelpCommand;
-	}
+			auto Found = Commands.find(Topic);
+			if (Found == Commands.end()) { std::cout << "Help topic unknown.\n"; return; }
+			if (Found->second.Description.empty()) { std::cout << "No help available.\n"; return; }
+			std::cout << Found->second.Description;
+		}
+	};
+	Commands["?"] = Commands["help"];
+	Commands["cd"] =
+	{
+		"' cd PATH'\tChange the working directory to PATH.\n",
+		[&](std::string const &Line)
+		{
+			std::string Trimmed;
+			String(Line) >> Trimmed;
+			glob_t Globbed;
+			int Result = glob(Trimmed.c_str(), GLOB_TILDE, nullptr, &Globbed);
+			if (Result != 0)
+			{
+				std::cout << "Invalid file '" << Trimmed << "'.\n";
+				return;
+			}
+			if (Globbed.gl_pathc > 1)
+			{
+				std::cout << "Can't cd to multiple directories.  Found " << Globbed.gl_pathc << " matching.\n";
+				return;
+			}
+			if (chdir(Globbed.gl_pathv[0]) != 0)
+			{
+				std::cout << "Error changing directories.\n";
+				return;
+			}
+		}
+	};
+	Commands["shell"] =
+	{
+		"' shell|! COMMAND'\tExecute COMMAND with system().\n",
+		[&](std::string const &Line)
+		{
+			system(Line.c_str());
+		}
+	};
+	Commands["!"] = Commands["shell"];
+	Commands["handle"] =
+	{
+		[&](std::string const &Line)
+		{
+			std::string Trimmed;
+			String(Line) >> Trimmed;
+			if (Trimmed.empty()) std::cout << Handle;
+			else
+			{
+				Handle = Trimmed;
+				std::cout << "New handle is " << Handle;
+			}
+		}
+	};
+	Commands["nick"] = Commands["handle"];
 
 	// Readline loop
 	rl_getc_function = [](FILE *File)
@@ -595,7 +472,7 @@ int main(int argc, char **argv)
 
 		if (Line[0] != ' ')
 		{
-			Core.Chat(Line.get());
+			Core.Chat(Handle + ": " + Line.get());
 			continue;
 		}
 
@@ -615,7 +492,7 @@ int main(int argc, char **argv)
 		}
 		assert(Found != Commands.end());
 
-		Found->second(&Line[CutIndex]);
+		Found->second.Function(&Line[CutIndex]);
 	}
 
 	return 0;

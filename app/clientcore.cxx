@@ -39,9 +39,10 @@ MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint
 
 MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
-ClientCore::ClientCore(std::string const &Handle, float Volume) : CallTransfer(Parent), Parent{false}, Playing{nullptr}, LastPosition{0}, Handle{Handle}
+ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Playing{nullptr}, LastPosition{0}
 {
 	libvlc_event_attach(libvlc_media_player_event_manager(Engine.VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
+	libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100));
 	libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100));
 
 	Parent.LogCallback = [this](Core::LogPriority Priority, std::string const &Message)
@@ -120,8 +121,7 @@ void ClientCore::Stop(void)
 
 void ClientCore::Chat(std::string const &Message)
 {
-	std::string QualifiedMessage = Handle + ": " + Message;
-	CallTransfer([=](void) { Parent.Chat(QualifiedMessage); });
+	CallTransfer([=](void) { Parent.Chat(Message); });
 }
 
 struct VLCParsedUserData
@@ -232,4 +232,172 @@ void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserD
 		if (Data->Core.UpdateCallback) Data->Core.UpdateCallback(*Media->second.get());
 		delete Data;
 	});
+}
+
+PlaylistType::PlaylistInfo::PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
+PlaylistType::PlaylistInfo::PlaylistInfo(void) {}
+
+Optional<size_t> PlaylistType::Find(HashT const &Hash)
+{
+	for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
+	return {};
+}
+
+void PlaylistType::AddUpdate(MediaInfo const &Item)
+{
+	auto Found = Find(Item.Hash);
+	if (!Found)
+	{
+		Playlist.emplace_back(Item.Hash, PlayState::Deselected, Item.Track, Item.Title, Item.Album, Item.Artist);
+	}
+	else
+	{
+		Playlist[*Found].Track = Item.Track;
+		Playlist[*Found].Title = Item.Title;
+		Playlist[*Found].Album = Item.Album;
+		Playlist[*Found].Artist = Item.Artist;
+	}
+}
+
+void PlaylistType::Remove(HashT const &Hash)
+{
+	auto Found = Find(Hash);
+	if (!Found) return;
+	if (Index && (*Found == *Index)) Index = {};
+	Playlist.erase(Playlist.begin() + *Found);
+}
+
+bool PlaylistType::Select(HashT const &Hash)
+{
+	auto Found = Find(Hash);
+	if (!Found) return true;
+	if (Index)
+	{
+		Playlist[*Index].State = PlayState::Deselected;
+	}
+	bool Out = Index == Found;
+	Index = *Found;
+	Playlist[*Index].State = PlayState::Pause;
+	return Out;
+}
+
+Optional<bool> PlaylistType::IsPlaying(void)
+{
+	if (!Index) return {};
+	return Playlist[*Index].State == PlayState::Play;
+}
+
+Optional<HashT> PlaylistType::GetID(size_t Row) const
+{
+	if (Row >= Playlist.size()) return {};
+	return Playlist[Row].Hash;
+}
+
+Optional<HashT> PlaylistType::GetCurrentID(void) const
+{
+	if (!Index) return {};
+	return Playlist[*Index].Hash;
+}
+
+Optional<PlaylistType::PlaylistInfo> PlaylistType::GetCurrent(void) const
+{
+	if (!Index) return {};
+	return Playlist[*Index];
+}
+
+std::vector<PlaylistType::PlaylistInfo> const &PlaylistType::GetItems(void) const { return Playlist; }
+
+Optional<HashT> PlaylistType::GetNextID(void) const
+{
+	if (!Index)
+	{
+		if (Playlist.empty()) return {};
+		else return Playlist.front().Hash;
+	}
+	else
+	{
+		if (*Index + 1 >= Playlist.size())
+			return Playlist.front().Hash;
+		return Playlist[*Index + 1].Hash;
+	}
+}
+
+Optional<HashT> PlaylistType::GetPreviousID(void) const
+{
+	if (!Index)
+	{
+		if (Playlist.empty()) return {};
+		else return Playlist.back().Hash;
+	}
+	else
+	{
+		if (*Index == 0)
+			return Playlist.back().Hash;
+		return Playlist[*Index - 1].Hash;
+	}
+}
+
+void PlaylistType::Play(void)
+{
+	if (!Index) return;
+	Playlist[*Index].State = PlayState::Play;
+}
+
+void PlaylistType::Stop(void)
+{
+	if (!Index) return;
+	Playlist[*Index].State = PlayState::Pause;
+}
+
+void PlaylistType::Shuffle(void)
+{
+	HashT CurrentID;
+	if (Index)
+	{
+		assert(*Index < Playlist.size());
+		CurrentID = Playlist[*Index].Hash;
+	}
+	std::random_shuffle(Playlist.begin(), Playlist.end());
+	auto Found = Find(CurrentID);
+	if (Found) Index = *Found;
+}
+
+PlaylistType::SortFactor::SortFactor(PlaylistColumns const Column, bool const Reverse) : Column{Column}, Reverse{Reverse} {}
+
+void PlaylistType::Sort(std::list<SortFactor> const &Factors)
+{
+	HashT CurrentID;
+	if (Index)
+	{
+		assert(*Index < Playlist.size());
+		CurrentID = Playlist[*Index].Hash;
+	}
+	std::stable_sort(Playlist.begin(), Playlist.end(), [&Factors](PlaylistType::PlaylistInfo const &First, PlaylistType::PlaylistInfo const &Second)
+	{
+		for (auto &Factor : Factors)
+		{
+			auto const Fix = [&Factor](bool const Verdict) { if (Factor.Reverse) return !Verdict; return Verdict; };
+			switch (Factor.Column)
+			{
+				case PlaylistColumns::Track:
+					if (First.Track == Second.Track) continue;
+					if (!First.Track) return Fix(true);
+					if (!Second.Track) return Fix(false);
+					return Fix(*First.Track < *Second.Track);
+				case PlaylistColumns::Title:
+					if (First.Title == Second.Title) continue;
+					return Fix(First.Title < Second.Title);
+				case PlaylistColumns::Album:
+					if (First.Album == Second.Album) continue;
+					return Fix(First.Album < Second.Album);
+				case PlaylistColumns::Artist:
+					if (First.Artist == Second.Artist) continue;
+					return Fix(First.Artist < Second.Artist);
+				default: assert(false); continue;
+			}
+		}
+		return false;
+	});
+	auto Found = Find(CurrentID);
+	if (Found) Index = *Found;
 }

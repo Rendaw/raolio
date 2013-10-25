@@ -9,6 +9,18 @@ std::condition_variable Sleep;
 
 int main(int argc, char **argv)
 {
+	if (argc >= 2)
+	{
+		std::string Test = argv[1];
+		if ((Test == "--help") || (Test == "-h"))
+		{
+			std::cout <<
+				"raolioremote [HOST] [PORT] [OPTIONS]\n"
+				"\tOPTION can be --add FILE, --play FILE, --stop, --message MESSAGE\n"
+				<< std::flush;
+			return 0;
+		}
+	}
 	std::unique_lock<std::mutex> SleepLock(Mutex);
 	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Die = true; Sleep.notify_all(); });
 
