@@ -162,8 +162,7 @@ int main(int argc, char **argv)
 	Core.Open(false, Host, Port);
 
 	// Define commands
-	std::cout << "All commands start with 1 space." << std::endl;
-	std::cout << "Type ' help' for a list of commands." << std::endl;
+	std::cout << "Type -help for a list of commands." << std::endl;
 	struct CommandT
 	{
 		CommandT(void) {}
@@ -175,7 +174,7 @@ int main(int argc, char **argv)
 	std::map<std::string, CommandT> Commands;
 	Commands["add"] =
 	{
-		"' add PATTERN...'\tAdds all filenames matching any PATTERN to playlist.\n",
+		"-add PATTERN...\tAdds all filenames matching any PATTERN to playlist.\n",
 		[&](std::string const &Line)
 		{
 			StringSplitter Splitter{{' '}, true};
@@ -203,7 +202,7 @@ int main(int argc, char **argv)
 	};
 	Commands["list"] =
 	{
-		"' list [-a][-all] [artist] [album] [track]'\n"
+		"-list [-a][-all] [artist] [album] [track]\n"
 		"\tLists all media in playlist, displaying columns as specified.\n",
 		[&](std::string const &Line)
 		{
@@ -250,7 +249,7 @@ int main(int argc, char **argv)
 	Commands["ls"] = Commands["list"];
 	Commands["sort"] =
 	{
-		"' sort [-][artist|album|track|title]...'\n"
+		"-sort [-][artist|album|track|title]...\n"
 		"\tSorts playlist by the specified columns, with increasing specifity. - reverses column order.\n",
 		[&](std::string const &Line)
 		{
@@ -282,7 +281,7 @@ int main(int argc, char **argv)
 	};
 	Commands["select"] =
 	{
-		"' select INDEX'\tPlays media at playlist INDEX.  Use list or ls to see indices.\n",
+		"-select INDEX\tPlays media at playlist INDEX.  Use list or ls to see indices.\n",
 		[&](std::string const &Line)
 		{
 			size_t Index = 0;
@@ -321,7 +320,7 @@ int main(int argc, char **argv)
 	Commands["previous"] = Commands["back"];
 	Commands["play"] =
 	{
-		"' play [TIME]'\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n",
+		"-play [TIME]\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n",
 		[&](std::string const &Line)
 		{
 			uint64_t Minutes = 0;
@@ -341,7 +340,7 @@ int main(int argc, char **argv)
 	};
 	Commands["volume"] =
 	{
-		"' volume VALUE'\tSets volume to VALUE.  Value must be in the range [0,100].\n",
+		"-volume VALUE\tSets volume to VALUE.  Value must be in the range [0,100].\n",
 		[&](std::string const &Line)
 		{
 			uint64_t Volume = 0;
@@ -357,8 +356,8 @@ int main(int argc, char **argv)
 	Commands["now"] = { [&](std::string const &Line) { Core.GetTime(); } };
 	Commands["help"] =
 	{
-		"' help'\tList all commands.\n"
-		"' help COMMAND'\tList help for COMMAND if available.\n",
+		"-help\tList all commands.\n"
+		"-help COMMAND\tList help for COMMAND if available.\n",
 		[&](std::string const &Line)
 		{
 			std::string Topic;
@@ -372,6 +371,7 @@ int main(int argc, char **argv)
 					if (Count++ % 6 == 5) std::cout << "\n";
 				}
 				std::cout << std::endl;
+				return;
 			}
 			auto Found = Commands.find(Topic);
 			if (Found == Commands.end()) { std::cout << "Help topic unknown.\n"; return; }
@@ -382,7 +382,7 @@ int main(int argc, char **argv)
 	Commands["?"] = Commands["help"];
 	Commands["cd"] =
 	{
-		"' cd PATH'\tChange the working directory to PATH.\n",
+		"-cd PATH\tChange the working directory to PATH.\n",
 		[&](std::string const &Line)
 		{
 			std::string Trimmed;
@@ -408,7 +408,7 @@ int main(int argc, char **argv)
 	};
 	Commands["shell"] =
 	{
-		"' shell|! COMMAND'\tExecute COMMAND with system().\n",
+		"-shell|! COMMAND\tExecute COMMAND with system().\n",
 		[&](std::string const &Line)
 		{
 			system(Line.c_str());
@@ -470,7 +470,7 @@ int main(int argc, char **argv)
 
 		if (Line[0] == 0) continue;
 
-		if (Line[0] != ' ')
+		if (Line[0] != '-')
 		{
 			Core.Chat(Handle + ": " + Line.get());
 			continue;
@@ -480,7 +480,7 @@ int main(int argc, char **argv)
 
 		size_t CutIndex = 1;
 		for (; Line[CutIndex] != 0; ++CutIndex)
-			if (Line[CutIndex] == ' ') break;
+			if (Line[CutIndex] == '-') break;
 		std::string Command{&Line[1], CutIndex - 1};
 		auto Found = Commands.lower_bound(Command);
 

@@ -508,7 +508,7 @@ struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 	bool Select(HashT const &Hash)
 	{
 		if (Index) dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
-		auto const Out = Select(Hash);
+		auto const Out = PlaylistType::Select(Hash);
 		if (Index) dataChanged(createIndex(*Index, 1), createIndex(*Index, 1));
 		return Out;
 	}
