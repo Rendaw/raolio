@@ -5,6 +5,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <glob.h>
+#include <iomanip>
 
 class StringSplitter
 {
@@ -76,6 +77,25 @@ class StringSplitter
 		std::vector<std::string> Out;
 };
 
+std::string FormatItem(PlaylistType::PlaylistInfo const &Item, Optional<size_t> Index, bool State, bool Album, bool TrackNumber, bool Artist)
+{
+	String Out;
+	if (State) Out << ((Item.State == PlayState::Play) ? "> " :
+		((Item.State == PlayState::Pause) ? "= " :
+		"  "));
+	if (Index) Out << *Index << ". ";
+	if (Album) Out << Item.Album;
+	if (TrackNumber && Item.Track)
+	{
+		if (Album) Out << "/";
+		Out << *Item.Track;
+	}
+	if (Album || TrackNumber) Out << " - ";
+	if (Artist) Out << Item.Artist << " - ";
+	Out << Item.Title;
+	return Out;
+}
+
 // Asynch logging and writing to the screen and stuff
 bool Alive = true;
 auto MainThread = pthread_self();
@@ -89,17 +109,18 @@ void Async(std::function<void(void)> const &Call)
 	pthread_kill(MainThread, SIGALRM);
 }
 
+// Because readline >8=(           )
+std::string Handle{"Dog: "};
+
 int main(int argc, char **argv)
 {
 	{
 		struct sigaction SignalAction{};
 		SignalAction.sa_handler = [](int) {};
 		sigaction(SIGALRM, &SignalAction, nullptr);
-		SignalAction.sa_handler = [](int) { Alive = false; };
 		sigaction(SIGINT, &SignalAction, nullptr);
 	}
 
-	std::string Handle{"Dog"};
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
 	if (argc >= 2)
@@ -110,6 +131,7 @@ int main(int argc, char **argv)
 			std::cout << "raoliocli [HANDLE] [HOST] [PORT]" << std::endl;
 			return 0;
 		}
+		Handle += ": ";
 	}
 	if (argc >= 3) Host = argv[2];
 	if (argc >= 4) String(argv[3]) >> Port;
@@ -123,17 +145,34 @@ int main(int argc, char **argv)
 		void Maintain(void) { if (InControl()) Request(); }
 		unsigned int Count = 2u;
 	} Volition;
-	PlaylistType Playlist;
+	struct CLIPlaylistType : PlaylistType
+	{
+		void Reverse(void) { std::reverse(Playlist.begin(), Playlist.end()); }
+		void Sink(HashT const &Hash)
+		{
+			auto Found = Playlist.begin();
+			for (; Found != Playlist.end(); ++Found)
+				if (Found->Hash == Hash) break;
+			if (Found == Playlist.end()) return;
+			auto Copy = *Found;
+			Playlist.erase(Found);
+			Playlist.push_back(std::move(Copy));
+		}
+	} Playlist;
 
-	ClientCore Core{0.75f};
+	uint64_t Volume = 75;
+	ClientCore Core{(float)Volume / 100.0f};
 	Core.LogCallback = [](std::string const &Message) { Async([=](void) { std::cout << Message << "\n"; }); };
 	Core.SeekCallback = [&](float Percent, float Duration) { Async([=](void)
 	{
 		auto Time = Duration * Percent;
 		unsigned int Minutes = Time / 60;
-		std::cout << "Time: " << Minutes << ":" << ((unsigned int)Time - (Minutes * 60)) << "\n";
+		auto OldFlags = std::cout.flags();
+		std::cout << "Time: " << Minutes << ":" << std::setfill('0') << std::setw(2) << ((unsigned int)Time - (Minutes * 60)) << "\n";
+		std::cout.flags(OldFlags);
 	}); };
 	Core.AddCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
+	Core.RemoveCallback = [&](HashT const &MediaID) { Async([&, MediaID](void) { Playlist.Remove(MediaID); }); };
 	Core.UpdateCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
 	Core.SelectCallback = [&](HashT const &MediaID) { Async([&, MediaID](void)
 	{
@@ -191,7 +230,8 @@ int main(int argc, char **argv)
 
 				for (decltype(Globbed.gl_pathc) Index = 0; Index < Globbed.gl_pathc; ++Index)
 				{
-					auto Filename = Globbed.gl_pathv[Index];
+					bfs::path Filename = Globbed.gl_pathv[Index];
+					if (bfs::is_directory(Filename)) continue;
 					auto Hash = HashFile(Filename);
 					assert(Hash);
 					if (!Hash) break;
@@ -200,6 +240,45 @@ int main(int argc, char **argv)
 			}
 		}
 	};
+	Commands["remove"] =
+	{
+		"-remove -a|INDEX...\n",
+		[&](std::string const &Line)
+		{
+			std::list<HashT> Hashes;
+			StringSplitter Splitter{{' '}, true};
+			Splitter.Process(Line);
+			for (auto Column : Splitter.Results())
+			{
+				if ((Column == "-a") || (Column == "--all"))
+				{
+					Core.RemoveAll();
+					return;
+				}
+
+				size_t Index = 0;
+				static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+				if (Parse(Column, Index))
+				{
+					auto SelectID = Playlist.GetID(Index);
+					if (!SelectID)
+					{
+						std::cout << "Invalid index: " << Column << "\n";
+						return;
+					}
+					Hashes.push_back(*SelectID);
+				}
+				else
+				{
+					std::cout << "Invalid index specified." << "\n";
+					return;
+				}
+			}
+			for (auto Remove : Hashes)
+				Core.Remove(Remove);
+		}
+	};
+	Commands["rm"] = Commands["remove"];
 	Commands["list"] =
 	{
 		"-list [-a][-all] [artist] [album] [track]\n"
@@ -226,24 +305,7 @@ int main(int argc, char **argv)
 			}
 			size_t Index = 0;
 			for (auto const &Item : Playlist.GetItems())
-			{
-				std::cout <<
-					((Item.State == PlayState::Play) ? "> " :
-						((Item.State == PlayState::Pause) ? "= " :
-							"  ")) <<
-					(Index++) << ". ";
-				if (Album) std::cout << Item.Album;
-				if (TrackNumber && Item.Track)
-				{
-					if (Album) std::cout << "/";
-					std::cout << *Item.Track;
-				}
-				if (Album || TrackNumber) std::cout << " - ";
-				if (Artist) std::cout << Item.Artist << " - ";
-				std::cout <<
-					Item.Title <<
-					"\n";
-			}
+				std::cout << FormatItem(Item, Index++, true, Artist, Album, TrackNumber) << "\n";
 		}
 	};
 	Commands["ls"] = Commands["list"];
@@ -277,6 +339,32 @@ int main(int argc, char **argv)
 		{
 			Playlist.Shuffle();
 			Commands["list"].Function("-a");
+		}
+	};
+	Commands["reverse"] =
+	{
+		"-reverse\tReverses the playlist.\n",
+		[&](std::string const &Line)
+		{
+			Playlist.Reverse();
+			Commands["list"].Function("-a");
+		}
+	};
+	Commands["sink"] =
+	{
+		"-sink INDEX\tMoves INDEX to the bottom of the playlist.\n",
+		[&](std::string const &Line)
+		{
+			size_t Index = 0;
+			static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+			if (Parse(Line, Index))
+			{
+				auto SelectID = Playlist.GetID(Index);
+				if (!SelectID) return;
+				Playlist.Sink(*SelectID);
+				Commands["list"].Function("-a");
+			}
+			else std::cout << "No index specified." << "\n";
 		}
 	};
 	Commands["select"] =
@@ -343,17 +431,36 @@ int main(int argc, char **argv)
 		"-volume VALUE\tSets volume to VALUE.  Value must be in the range [0,100].\n",
 		[&](std::string const &Line)
 		{
-			uint64_t Volume = 0;
-			static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
-			if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
-			else std::cout << "Bad volume.\n";
+			if (Line.empty())
+			{
+				std::cout << "Volume is " << Volume << "\n";
+			}
+			else
+			{
+				static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
+				if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
+				else std::cout << "Bad volume.\n";
+			}
 		}
 	};
 	Commands["stop"] = { [&](std::string const &Line) { Core.Stop(); } };
 	Commands["pause"] = Commands["stop"];
 	Commands["quit"] = { [&](std::string const &Line) { Alive = false; } };
 	Commands["exit"] = Commands["quit"];
-	Commands["now"] = { [&](std::string const &Line) { Core.GetTime(); } };
+	Commands["now"] =
+	{
+		[&](std::string const &Line)
+		{
+			auto Current = Playlist.GetCurrent();
+			if (!Current)
+			{
+				std::cout << "No song selected.\n";
+				return;
+			}
+			std::cout << "Playing: " << FormatItem(*Current, {}, false, !Current->Album.empty(), Current->Track, !Current->Artist.empty()) << "\n";
+			Core.GetTime();
+		}
+	};
 	Commands["help"] =
 	{
 		"-help\tList all commands.\n"
@@ -367,7 +474,7 @@ int main(int argc, char **argv)
 				size_t Count = 0;
 				for (auto const &Command : Commands)
 				{
-					std::cout << "' " << Command.first << "'\t";
+					std::cout << "-" << Command.first << "\t";
 					if (Count++ % 6 == 5) std::cout << "\n";
 				}
 				std::cout << std::endl;
@@ -382,9 +489,16 @@ int main(int argc, char **argv)
 	Commands["?"] = Commands["help"];
 	Commands["cd"] =
 	{
+		"-cd\tShow working directory.\n"
 		"-cd PATH\tChange the working directory to PATH.\n",
 		[&](std::string const &Line)
 		{
+			if (Line.empty())
+			{
+				try { std::cout << bfs::current_path() << "\n"; }
+				catch (...) { std::cout << "Unable to determine current path.\n"; }
+				return;
+			}
 			std::string Trimmed;
 			String(Line) >> Trimmed;
 			glob_t Globbed;
@@ -406,6 +520,7 @@ int main(int argc, char **argv)
 			}
 		}
 	};
+	Commands["cwd"] = Commands["pwd"] = Commands["cd"];
 	Commands["shell"] =
 	{
 		"-shell|! COMMAND\tExecute COMMAND with system().\n",
@@ -425,7 +540,8 @@ int main(int argc, char **argv)
 			else
 			{
 				Handle = Trimmed;
-				std::cout << "New handle is " << Handle;
+				std::cout << "New handle is '" << Handle << "'\n";
+				Handle += ": ";
 			}
 		}
 	};
@@ -452,7 +568,7 @@ int main(int argc, char **argv)
 				Calls.clear();
 			}
 
-			rl_set_prompt("");
+			rl_set_prompt(Handle.c_str());
 			rl_replace_line(saved_line, 0);
 			rl_point = saved_point;
 			rl_redisplay();
@@ -472,7 +588,7 @@ int main(int argc, char **argv)
 
 		if (Line[0] != '-')
 		{
-			Core.Chat(Handle + ": " + Line.get());
+			Core.Chat(Handle + Line.get());
 			continue;
 		}
 
@@ -480,7 +596,7 @@ int main(int argc, char **argv)
 
 		size_t CutIndex = 1;
 		for (; Line[CutIndex] != 0; ++CutIndex)
-			if (Line[CutIndex] == '-') break;
+			if (Line[CutIndex] == ' ') break;
 		std::string Command{&Line[1], CutIndex - 1};
 		auto Found = Commands.lower_bound(Command);
 

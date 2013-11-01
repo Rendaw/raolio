@@ -30,9 +30,9 @@ static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
 	TrackExtractor >> Track;
 	if (Track >= 0) Out.Track = Track;
 	else Out.Track = {};
-	Out.Artist = ExtractMeta(Media, libvlc_meta_Artist);
-	Out.Album = ExtractMeta(Media, libvlc_meta_Album);
-	Out.Title = ExtractMeta(Media, libvlc_meta_Title);
+	Out.Artist = ExtractMeta(Media, libvlc_meta_Artist, Out.Artist);
+	Out.Album = ExtractMeta(Media, libvlc_meta_Album, Out.Album);
+	Out.Title = ExtractMeta(Media, libvlc_meta_Title, Out.Title);
 }
 
 MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
@@ -54,8 +54,10 @@ ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Play
 	};
 
 	Parent.ChatCallback = [this](std::string const &Message) { if (LogCallback) LogCallback(Message); };
-	Parent.AddCallback = [this](HashT const &Hash, bfs::path const &Filename)
-		{ AddInternal(Hash, Filename); };
+	Parent.AddCallback = [this](HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle)
+		{ AddInternal(Hash, Filename, DefaultTitle); };
+	Parent.RemoveCallback = [this](HashT const &Hash)
+		{ RemoveInternal(Hash); };
 	Parent.ClockCallback = [this](uint64_t InstanceID, uint64_t const &SystemTime)
 		{ Latencies.Add(InstanceID, SystemTime); };
 	Parent.PlayCallback = [this](HashT const &MediaID, MediaTimeT MediaTime, uint64_t const &SystemTime)
@@ -72,7 +74,25 @@ void ClientCore::Add(HashT const &Hash, size_t Size, bfs::path const &Filename)
 	CallTransfer([=](void)
 	{
 		Parent.Add(Hash, Size, Filename);
-		AddInternal(Hash, Filename);
+		AddInternal(Hash, Filename, Filename.filename().string());
+	});
+}
+
+void ClientCore::Remove(HashT const &Hash)
+{
+	CallTransfer([=](void)
+	{
+		Parent.Remove(Hash);
+		RemoveInternal(Hash);
+	});
+}
+
+void ClientCore::RemoveAll(void)
+{
+	CallTransfer([=](void)
+	{
+		while (!MediaLookup.empty())
+			Remove(MediaLookup.begin()->first);
 	});
 }
 
@@ -131,7 +151,7 @@ struct VLCParsedUserData
 	HashT Hash;
 };
 
-void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename)
+void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle)
 {
 	if (MediaLookup.find(Hash) != MediaLookup.end()) return;
 	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename.string().c_str());
@@ -142,7 +162,7 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename)
 		return;
 	}
 
-	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, {}, VLCMedia};
+	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, DefaultTitle, VLCMedia};
 	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
 
 	if (libvlc_media_is_parsed(VLCMedia))
@@ -158,6 +178,14 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename)
 	Core::PlayStatus LastPlayStatus = Parent.GetPlayStatus();
 	if (LastPlayStatus.Playing && (Hash == LastPlayStatus.MediaID))
 		PlayInternal(LastPlayStatus.MediaID, LastPlayStatus.MediaTime, LastPlayStatus.SystemTime, GetNow());
+}
+
+void ClientCore::RemoveInternal(HashT const &Hash)
+{
+	auto Found = MediaLookup.find(Hash);
+	if (Found == MediaLookup.end()) return;
+	if (RemoveCallback) RemoveCallback(Hash);
+	MediaLookup.erase(Found);
 }
 
 void ClientCore::SetVolumeInternal(float Volume) { libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100)); }

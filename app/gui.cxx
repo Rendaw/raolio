@@ -961,6 +961,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		Core->SeekCallback = [=](float Percent, float Duration) { CrossThread->Transfer([=](void)
 			{ if (!Position->isSliderDown()) Position->setValue(static_cast<int>(Percent * 10000)); }); };
 		Core->AddCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
+		Core->RemoveCallback = [=](HashT const &MediaID) { CrossThread->Transfer([=](void) { Playlist->Remove(MediaID); }); };
 		Core->UpdateCallback = [=](MediaInfo Item) { CrossThread->Transfer([=](void) { Playlist->AddUpdate(Item); }); };
 		Core->SelectCallback = [=](HashT const &MediaID)
 		{

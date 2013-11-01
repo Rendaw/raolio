@@ -98,7 +98,7 @@ bool CoreConnection::IdleWrite(void)
 	if (!Announce.empty())
 	{
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Announcing " << FormatHash(Announce.front().ID) << " size " << Announce.front().Size);
-		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Extension, Announce.front().Size);
+		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Extension, Announce.front().Size, Announce.front().DefaultTitle);
 		Announce.pop();
 		return true;
 	}
@@ -132,8 +132,14 @@ void CoreConnection::HandleTimer(uint64_t const &Now)
 
 	if (Request.File.is_open() && ((GetNow() - Request.LastResponse) > 10 * 1000))
 	{
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Re-requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
-		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
+		if (Request.Attempts > 10)
+			RequestNext();
+		else
+		{
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Re-requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
+			Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
+			++Request.Attempts;
+		}
 	}
 }
 
@@ -143,13 +149,13 @@ void CoreConnection::Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t con
 	if (Parent.ClockCallback) Parent.ClockCallback(InstanceID, SystemTime);
 }
 
-void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string const &Extension, uint64_t const &Size)
+void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string const &Extension, uint64_t const &Size, std::string const &DefaultTitle)
 {
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Preparing " << FormatHash(MediaID) << " size " << Size);
-	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Extension, Size);
-	PendingRequests.emplace(MediaID, Extension, Size);
+	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Extension, Size, DefaultTitle);
+	PendingRequests.emplace(MediaID, Extension, Size, DefaultTitle);
 	if (Request.Pieces.Finished())
 		RequestNext();
 }
@@ -164,6 +170,7 @@ void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &
 		Response.File.open(Out->second.Path, std::fstream::in);
 	}
 	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize));
+	Assert(Response.File.tellg(), static_cast<std::streamsize>(From * ChunkSize));
 	Response.ID = MediaID;
 	Response.Chunk = From;
 	WakeIdleWrite();
@@ -182,14 +189,19 @@ void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chu
 	if (Request.Pieces.Finished())
 	{
 		Request.File.close();
-		auto Now = GetNow();
-		Parent.PruneLibrary(Now);
-		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path, GetNow()});
+		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path, Request.DefaultTitle});
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Finished receiving " << FormatHash(Request.ID));
-		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path);
+		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path, Request.DefaultTitle);
 
 		RequestNext();
 	}
+}
+
+void CoreConnection::Handle(NP1V1Remove, HashT const &MediaID)
+{
+	Parent.Net.Forward(NP1V1Remove{}, *this, MediaID);
+	if (Parent.RemoveCallback) Parent.RemoveCallback(MediaID);
+	Parent.RemoveInternal(MediaID);
 }
 
 void CoreConnection::Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &MediaTime, uint64_t const &SystemTime)
@@ -231,6 +243,8 @@ bool CoreConnection::RequestNext(void)
 		Request.ID = PendingRequests.front().ID;
 		Request.Size = PendingRequests.front().Size;
 		Request.Pieces = {1 + ((Request.Size - 1) / ChunkSize)};
+		Request.Attempts = 0;
+		Request.DefaultTitle = PendingRequests.front().DefaultTitle;
 		Request.Path = Parent.TempPath / (FormatHash(Request.ID) + PendingRequests.front().Extension);
 		if (Request.File.is_open()) Request.File.close();
 		Request.File.open(Request.Path, std::fstream::out);
@@ -248,6 +262,12 @@ bool CoreConnection::RequestNext(void)
 	return false;
 }
 
+void CoreConnection::Remove(HashT const &MediaID)
+{
+	if (Request.ID == MediaID) RequestNext();
+	if ((Response.ID == MediaID) && (Response.File.is_open())) Response.File.close();
+}
+
 Core::Core(bool PruneOldItems) :
 	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
 	ID{GeneratePUID()},
@@ -255,12 +275,43 @@ Core::Core(bool PruneOldItems) :
 	Last{false},
 	Net
 	{
-		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
+		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Remove{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
 		[this](std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) // Create connection
 		{
+			auto IdleTime = Net.IdleSince();
+			if (Prune && IdleTime && (GetNow() - *IdleTime > 1000 * 60 * 60))
+			{
+				std::list<HashT> Removing;
+				for (auto const &Item : Library)
+				{
+					auto ItemIterator = Item.second.Path.begin();
+					auto TempIterator = TempPath.begin();
+					bool IsCached = true;
+					while (TempIterator != TempPath.end())
+					{
+						if ((ItemIterator == Item.second.Path.end()) ||
+							(*ItemIterator != *TempIterator))
+						{
+							IsCached = false;
+							break;
+						}
+						++TempIterator;
+						++ItemIterator;
+					}
+					if (IsCached)
+						Removing.push_back(Item.first);
+				}
+				for (auto const &Hash : Removing)
+				{
+					if (RemoveCallback) RemoveCallback(Hash);
+					Library.erase(Hash);
+				}
+				bfs::remove_all(TempPath);
+				bfs::create_directory(TempPath);
+			}
 			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
 			for (auto Item : Library)
-				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size);
+				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size, Item.second.DefaultTitle);
 			return Out;
 		},
 		10.0f
@@ -295,17 +346,21 @@ void Core::Add(HashT const &MediaID, size_t Size, bfs::path const &Path)
 {
 	try
 	{
-		auto Now = GetNow();
-		PruneLibrary(Now);
-		Library.emplace(MediaID, LibraryInfo{Size, Path, Now});
+		Library.emplace(MediaID, LibraryInfo{Size, Path, Path.filename().string()});
 
 		for (auto &Connection : Net.GetConnections())
 		{
-			Connection->Announce.emplace(MediaID, Path.extension().string(), Size);
+			Connection->Announce.emplace(MediaID, Path.extension().string(), Size, Path.filename().string());
 			Connection->WakeIdleWrite();
 		}
 	}
 	catch (...) {} // TODO Log/warn?
+}
+
+void Core::Remove(HashT const &MediaID)
+{
+	Net.Broadcast(NP1V1Remove{}, MediaID);
+	RemoveInternal(MediaID);
 }
 
 void Core::Play(HashT const &MediaID, MediaTimeT Position, uint64_t SystemTime)
@@ -329,16 +384,11 @@ void Core::Chat(std::string const &Message)
 Core::PlayStatus const &Core::GetPlayStatus(void) const
 	{ return Last; }
 
-void Core::PruneLibrary(uint64_t const &Now)
+void Core::RemoveInternal(HashT const &MediaID)
 {
-	if (!Prune) return;
-	for (auto Item = Library.begin(); Item != Library.end(); )
-	{
-		if (Now - Item->second.Created > 1000 * 60 * 60)
-		{
-			bfs::remove(Item->second.Path);
-			Item = Library.erase(Item);
-		}
-		else ++Item;
-	}
+	auto Out = Library.find(MediaID);
+	if (Out == Library.end()) return;
+	Library.erase(Out);
+	for (auto &Connection : Net.GetConnections())
+		Connection->Remove(MediaID);
 }

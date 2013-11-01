@@ -51,6 +51,7 @@ template <typename ConnectionType> struct Network
 
 		// Network thread only
 		bool IsDead(void) { return Dead; }
+		uint64_t GetDiedAt(void) { assert(Dead); return DiedAt; }
 
 		void WakeIdleWrite(void) { if (Dead) return; ev_io_start(EVLoop, &WriteWatcher); }
 
@@ -80,12 +81,14 @@ template <typename ConnectionType> struct Network
 			close(Socket);
 
 			Dead = true;
+			DiedAt = GetNow();
 		}
 
 		private:
 			friend struct Network<ConnectionType>;
 
 			bool Dead;
+			uint64_t DiedAt;
 
 			std::string Host;
 			uint16_t Port;
@@ -246,6 +249,17 @@ template <typename ConnectionType> struct Network
 			if (&*Connection == &From) continue;
 			Connection->RawSend(Data);
 		}
+	}
+
+	Optional<uint64_t> IdleSince(void)
+	{
+		Optional<uint64_t> Out;
+		for (auto &Connection : Connections)
+		{
+			if (Connection->IsDead() && (!Out || (Connection->GetDiedAt() > *Out)))
+				Out = Connection->GetDiedAt();
+		}
+		return Out;
 	}
 
 	private:

@@ -69,6 +69,7 @@ struct ClientCore
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(float Percent, float Duration)> SeekCallback;
 	std::function<void(MediaInfo Item)> AddCallback;
+	std::function<void(HashT const &MediaID)> RemoveCallback;
 	std::function<void(MediaInfo Item)> UpdateCallback;
 	std::function<void(HashT const &MediaID)> SelectCallback;
 	std::function<void(void)> PlayCallback;
@@ -78,6 +79,8 @@ struct ClientCore
 	void Open(bool Listen, std::string const &Host, uint16_t Port);
 
 	void Add(HashT const &Hash, size_t Size, bfs::path const &Filename);
+	void Remove(HashT const &Hash);
+	void RemoveAll(void);
 
 	void SetVolume(float Volume);
 	void GetTime(void);
@@ -89,7 +92,8 @@ struct ClientCore
 	void Chat(std::string const &Message);
 
 	private:
-		void AddInternal(HashT const &Hash, bfs::path const &Filename);
+		void AddInternal(HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle);
+		void RemoveInternal(HashT const &Hash);
 
 		void SetVolumeInternal(float Volume);
 		float GetTimeInternal(void);
@@ -127,18 +131,18 @@ enum struct PlayState { Deselected, Pause, Play };
 
 struct PlaylistType
 {
+	struct PlaylistInfo
+	{
+		HashT Hash;
+		PlayState State;
+		Optional<uint16_t> Track;
+		std::string Title;
+		std::string Album;
+		std::string Artist;
+		PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist);
+		PlaylistInfo(void);
+	};
 	protected:
-		struct PlaylistInfo
-		{
-			HashT Hash;
-			PlayState State;
-			Optional<uint16_t> Track;
-			std::string Title;
-			std::string Album;
-			std::string Artist;
-			PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist);
-			PlaylistInfo(void);
-		};
 		std::vector<PlaylistInfo> Playlist;
 		Optional<size_t> Index;
 	public:
