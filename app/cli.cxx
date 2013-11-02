@@ -121,6 +121,8 @@ int main(int argc, char **argv)
 		sigaction(SIGINT, &SignalAction, nullptr);
 	}
 
+	InitializeTranslation("raoliocli");
+
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
 	if (argc >= 2)
@@ -167,9 +169,7 @@ int main(int argc, char **argv)
 	{
 		auto Time = Duration * Percent;
 		unsigned int Minutes = Time / 60;
-		auto OldFlags = std::cout.flags();
-		std::cout << "Time: " << Minutes << ":" << std::setfill('0') << std::setw(2) << ((unsigned int)Time - (Minutes * 60)) << "\n";
-		std::cout.flags(OldFlags);
+		std::cout << Local("Time: ^0:^1", Minutes, String() << std::setfill('0') << std::setw(2) << ((unsigned int)Time - (Minutes * 60))) << "\n";
 	}); };
 	Core.AddCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
 	Core.RemoveCallback = [&](HashT const &MediaID) { Async([&, MediaID](void) { Playlist.Remove(MediaID); }); };
@@ -181,7 +181,7 @@ int main(int argc, char **argv)
 		auto Playing = Playlist.GetCurrent();
 		Assert(Playing);
 		if (!WasSame)
-			std::cout << "Playing " << Playing->Title << "\n";
+			std::cout << Local("Playing ^0", Playing->Title) << "\n";
 	}); };
 	Core.PlayCallback = [&](void) { Async([&](void) { Playlist.Play(); }); };
 	Core.StopCallback = [&](void) { Async([&](void) { Playlist.Stop(); }); };
@@ -197,11 +197,11 @@ int main(int argc, char **argv)
 		});
 	};
 
-	std::cout << "Connecting to " << Host << ":" << Port << std::endl;
+	std::cout << Local("Connecting to ^0:^1", Host, Port) << std::endl;
 	Core.Open(false, Host, Port);
 
 	// Define commands
-	std::cout << "Type -help for a list of commands." << std::endl;
+	std::cout << Local("Type -help for a list of commands.") << std::endl;
 	struct CommandT
 	{
 		CommandT(void) {}
@@ -213,7 +213,7 @@ int main(int argc, char **argv)
 	std::map<std::string, CommandT> Commands;
 	Commands["add"] =
 	{
-		"-add PATTERN...\tAdds all filenames matching any PATTERN to playlist.\n",
+		Local("-add PATTERN...\tAdds all filenames matching any PATTERN to playlist.") + "\n",
 		[&](std::string const &Line)
 		{
 			StringSplitter Splitter{{' '}, true};
@@ -224,7 +224,7 @@ int main(int argc, char **argv)
 				int Result = glob(Pattern.c_str(), GLOB_TILDE, nullptr, &Globbed);
 				if (Result != 0)
 				{
-					std::cerr << "Invalid file '" << Pattern << "'" << std::endl;
+					std::cerr << Local("Invalid file '^0'", Pattern) << std::endl;
 					continue;
 				}
 
@@ -242,7 +242,7 @@ int main(int argc, char **argv)
 	};
 	Commands["remove"] =
 	{
-		"-remove -a|INDEX...\n",
+		Local("-remove -a|INDEX...\tRemoves INDEX or all items from playlist.") + "\n",
 		[&](std::string const &Line)
 		{
 			std::list<HashT> Hashes;
@@ -263,14 +263,14 @@ int main(int argc, char **argv)
 					auto SelectID = Playlist.GetID(Index);
 					if (!SelectID)
 					{
-						std::cout << "Invalid index: " << Column << "\n";
+						std::cout << Local("Invalid index: ^0", Column) << "\n";
 						return;
 					}
 					Hashes.push_back(*SelectID);
 				}
 				else
 				{
-					std::cout << "Invalid index specified." << "\n";
+					std::cout << Local("Invalid index specified.") << "\n";
 					return;
 				}
 			}
@@ -282,7 +282,7 @@ int main(int argc, char **argv)
 	Commands["list"] =
 	{
 		"-list [-a][-all] [artist] [album] [track]\n"
-		"\tLists all media in playlist, displaying columns as specified.\n",
+		"\t" + Local("Lists all media in playlist, displaying columns as specified.") + "\n",
 		[&](std::string const &Line)
 		{
 			bool Artist = false;
@@ -312,7 +312,7 @@ int main(int argc, char **argv)
 	Commands["sort"] =
 	{
 		"-sort [-][artist|album|track|title]...\n"
-		"\tSorts playlist by the specified columns, with increasing specifity. - reverses column order.\n",
+		"\t" + Local("Sorts playlist by the specified columns, with increasing specifity. - reverses column order.") + "\n",
 		[&](std::string const &Line)
 		{
 			std::list<PlaylistType::SortFactor> Factors;
@@ -343,7 +343,7 @@ int main(int argc, char **argv)
 	};
 	Commands["reverse"] =
 	{
-		"-reverse\tReverses the playlist.\n",
+		"-reverse\t" + Local("Reverses the playlist.") + "\n",
 		[&](std::string const &Line)
 		{
 			Playlist.Reverse();
@@ -352,7 +352,7 @@ int main(int argc, char **argv)
 	};
 	Commands["sink"] =
 	{
-		"-sink INDEX\tMoves INDEX to the bottom of the playlist.\n",
+		"-sink INDEX\t" + Local("Moves INDEX to the bottom of the playlist.") + "\n",
 		[&](std::string const &Line)
 		{
 			size_t Index = 0;
@@ -364,12 +364,12 @@ int main(int argc, char **argv)
 				Playlist.Sink(*SelectID);
 				Commands["list"].Function("-a");
 			}
-			else std::cout << "No index specified." << "\n";
+			else std::cout << Local("No index specified.") << "\n";
 		}
 	};
 	Commands["select"] =
 	{
-		"-select INDEX\tPlays media at playlist INDEX.  Use list or ls to see indices.\n",
+		"-select INDEX\t" + Local("Plays media at playlist INDEX.  Use list or ls to see indices.") + "\n",
 		[&](std::string const &Line)
 		{
 			size_t Index = 0;
@@ -381,7 +381,7 @@ int main(int argc, char **argv)
 				Volition.Request();
 				Core.Play(*SelectID, 0ul);
 			}
-			else std::cout << "No index specified." << "\n";
+			else std::cout << Local("No index specified.") << "\n";
 		}
 	};
 	Commands["next"] =
@@ -408,7 +408,7 @@ int main(int argc, char **argv)
 	Commands["previous"] = Commands["back"];
 	Commands["play"] =
 	{
-		"-play [TIME]\tPlays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.\n",
+		"-play [TIME]\t" + Local("Plays the current media if paused.  If TIME is specified (as MM:SS), also seeks the media.") + "\n",
 		[&](std::string const &Line)
 		{
 			uint64_t Minutes = 0;
@@ -428,18 +428,18 @@ int main(int argc, char **argv)
 	};
 	Commands["volume"] =
 	{
-		"-volume VALUE\tSets volume to VALUE.  Value must be in the range [0,100].\n",
+		"-volume VALUE\t" + Local("Sets volume to VALUE.  Value must be in the range [0,100].") + "\n",
 		[&](std::string const &Line)
 		{
 			if (Line.empty())
 			{
-				std::cout << "Volume is " << Volume << "\n";
+				std::cout << Local("Volume is ^0", Volume) << "\n";
 			}
 			else
 			{
 				static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
 				if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
-				else std::cout << "Bad volume.\n";
+				else std::cout << Local("Bad volume.") << "\n";
 			}
 		}
 	};
@@ -454,17 +454,17 @@ int main(int argc, char **argv)
 			auto Current = Playlist.GetCurrent();
 			if (!Current)
 			{
-				std::cout << "No song selected.\n";
+				std::cout << Local("No song selected.") << "\n";
 				return;
 			}
-			std::cout << "Playing: " << FormatItem(*Current, {}, false, !Current->Album.empty(), Current->Track, !Current->Artist.empty()) << "\n";
+			std::cout << Local("Playing: ^0", FormatItem(*Current, {}, false, !Current->Album.empty(), Current->Track, !Current->Artist.empty())) << "\n";
 			Core.GetTime();
 		}
 	};
 	Commands["help"] =
 	{
-		"-help\tList all commands.\n"
-		"-help COMMAND\tList help for COMMAND if available.\n",
+		"-help\t" + Local("List all commands.") + "\n"
+		"-help COMMAND\t" + Local("List help for COMMAND if available.") + "\n",
 		[&](std::string const &Line)
 		{
 			std::string Topic;
@@ -481,22 +481,22 @@ int main(int argc, char **argv)
 				return;
 			}
 			auto Found = Commands.find(Topic);
-			if (Found == Commands.end()) { std::cout << "Help topic unknown.\n"; return; }
-			if (Found->second.Description.empty()) { std::cout << "No help available.\n"; return; }
+			if (Found == Commands.end()) { std::cout << Local("Help topic unknown.") << "\n"; return; }
+			if (Found->second.Description.empty()) { std::cout << Local("No help available.") << "\n"; return; }
 			std::cout << Found->second.Description;
 		}
 	};
 	Commands["?"] = Commands["help"];
 	Commands["cd"] =
 	{
-		"-cd\tShow working directory.\n"
-		"-cd PATH\tChange the working directory to PATH.\n",
+		"-cd\t" + Local("Show working directory.") + "\n"
+		"-cd PATH\t" + Local("Change the working directory to PATH.") + "\n",
 		[&](std::string const &Line)
 		{
 			if (Line.empty())
 			{
 				try { std::cout << bfs::current_path() << "\n"; }
-				catch (...) { std::cout << "Unable to determine current path.\n"; }
+				catch (...) { std::cout << Local("Unable to determine current path.") + "\n"; }
 				return;
 			}
 			std::string Trimmed;
@@ -505,17 +505,17 @@ int main(int argc, char **argv)
 			int Result = glob(Trimmed.c_str(), GLOB_TILDE, nullptr, &Globbed);
 			if (Result != 0)
 			{
-				std::cout << "Invalid file '" << Trimmed << "'.\n";
+				std::cout << Local("Invalid file '^0'.", Trimmed) + "\n";
 				return;
 			}
 			if (Globbed.gl_pathc > 1)
 			{
-				std::cout << "Can't cd to multiple directories.  Found " << Globbed.gl_pathc << " matching.\n";
+				std::cout << Local("Can't cd to multiple directories.  Found ^0 matching.", Globbed.gl_pathc) + "\n";
 				return;
 			}
 			if (chdir(Globbed.gl_pathv[0]) != 0)
 			{
-				std::cout << "Error changing directories.\n";
+				std::cout << Local("Error changing directories.") << "\n";
 				return;
 			}
 		}
@@ -523,7 +523,7 @@ int main(int argc, char **argv)
 	Commands["cwd"] = Commands["pwd"] = Commands["cd"];
 	Commands["shell"] =
 	{
-		"-shell|! COMMAND\tExecute COMMAND with system().\n",
+		"-shell|! COMMAND\t" + Local("Execute COMMAND with system().") + "\n",
 		[&](std::string const &Line)
 		{
 			system(Line.c_str());
@@ -540,7 +540,7 @@ int main(int argc, char **argv)
 			else
 			{
 				Handle = Trimmed;
-				std::cout << "New handle is '" << Handle << "'\n";
+				std::cout << Local("New handle is '^0'", Handle) + "\n";
 				Handle += ": ";
 			}
 		}
@@ -603,7 +603,7 @@ int main(int argc, char **argv)
 		if ((Found == Commands.end()) ||
 			(Command[0] != Found->first[0]))
 		{
-			std::cout << "Unknown command.\n";
+			std::cout << Local("Unknown command.") + "\n";
 			continue;
 		}
 		assert(Found != Commands.end());

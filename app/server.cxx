@@ -1,5 +1,7 @@
 #include "core.h"
 
+#include "translation/translation.h"
+
 #include <condition_variable>
 #include <csignal>
 
@@ -11,6 +13,8 @@ int main(int argc, char **argv)
 {
 	std::unique_lock<std::mutex> SleepLock(Mutex);
 	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Die = true; Sleep.notify_all(); });
+
+	InitializeTranslation("raolioserver");
 
 	std::string Host{"0.0.0.0"};
 	uint16_t Port{20578};
@@ -33,7 +37,7 @@ int main(int argc, char **argv)
 		std::cout << Priority << ": " << Message << std::endl;
 	};
 	Core.Open(true, Host, Port);
-	std::cout << "Starting server @ " << Host << ":" << Port << std::endl;
+	std::cout << Local("Starting server @ ^0:^1", Host, Port) << std::endl;
 
 	while (!Die)
 		Sleep.wait(SleepLock);

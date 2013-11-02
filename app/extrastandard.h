@@ -19,6 +19,9 @@ struct String
 	operator std::string(void) const { return Buffer.str(); }
 };
 
+inline std::ostream &operator <<(std::ostream &Stream, String const &Value)
+	{ return Stream << (std::string)Value; }
+
 // Will be included in C++14 lolololol
 template<typename T, typename... Args> std::unique_ptr<T> make_unique(Args&&... args)
 	{ return std::unique_ptr<T>(new T(std::forward<Args>(args)...)); }

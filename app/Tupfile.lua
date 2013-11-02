@@ -1,3 +1,5 @@
+DoOnce 'app/translation/Tupfile.lua'
+
 local LinkFlags = ' -pthread -lboost_system -lboost_filesystem -lboost_regex -lev'
 
 local SharedObjects = Define.Objects
@@ -8,7 +10,7 @@ local SharedObjects = Define.Objects
 		+ 'hash.cxx'
 		+ 'md5.c'
 		+ 'network.cxx'
-}
+} + TranslationObjects
 
 local SharedClientObjects = Define.Objects
 {

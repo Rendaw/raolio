@@ -1,5 +1,7 @@
 #include "core.h"
 
+#include "translation/translation.h"
+
 #include <random>
 
 uint64_t GeneratePUID(void) // Probably Unique ID
@@ -82,7 +84,7 @@ void FilePieces::Set(uint64_t Index)
 CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) :
 	Network<CoreConnection>::Connection{Host, Port, Socket, EVLoop, *this}, Parent(Parent), SentPlayState{false}
 {
-	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Established connection to " << Host << ":" << Port);
+	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Established connection to ^0:^1", Host, Port));
 }
 
 bool CoreConnection::IdleWrite(void)
@@ -97,7 +99,7 @@ bool CoreConnection::IdleWrite(void)
 
 	if (!Announce.empty())
 	{
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Announcing " << FormatHash(Announce.front().ID) << " size " << Announce.front().Size);
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Announcing ^0 size ^1", FormatHash(Announce.front().ID), Announce.front().Size));
 		Send(NP1V1Prepare{}, Announce.front().ID, Announce.front().Extension, Announce.front().Size, Announce.front().DefaultTitle);
 		Announce.pop();
 		return true;
@@ -122,7 +124,7 @@ bool CoreConnection::IdleWrite(void)
 		}
 	}
 
-	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, "Nothing to idly write, stopping.");
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Nothing to idly write, stopping."));
 	return false;
 }
 
@@ -136,7 +138,7 @@ void CoreConnection::HandleTimer(uint64_t const &Now)
 			RequestNext();
 		else
 		{
-			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Re-requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Re-requesting ^0 from chunk ^1", FormatHash(Request.ID), Request.Pieces.Next()));
 			Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 			++Request.Attempts;
 		}
@@ -153,7 +155,7 @@ void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string cons
 {
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
-	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Preparing " << FormatHash(MediaID) << " size " << Size);
+	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Preparing ^0 size ^1", FormatHash(MediaID), Size));
 	Parent.Net.Forward(NP1V1Prepare{}, *this, MediaID, Extension, Size, DefaultTitle);
 	PendingRequests.emplace(MediaID, Extension, Size, DefaultTitle);
 	if (Request.Pieces.Finished())
@@ -190,7 +192,7 @@ void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chu
 	{
 		Request.File.close();
 		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path, Request.DefaultTitle});
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Finished receiving " << FormatHash(Request.ID));
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Finished receiving ^0", FormatHash(Request.ID)));
 		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path, Request.DefaultTitle);
 
 		RequestNext();
@@ -211,7 +213,7 @@ void CoreConnection::Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &M
 	Parent.Last.MediaID = MediaID;
 	Parent.Last.MediaTime = MediaTime;
 	Parent.Last.SystemTime = SystemTime;
-	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Received play for " << FormatHash(MediaID) << ":" << MediaTime << " starting at " << SystemTime);
+	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Received play for ^0:^1 starting at ^2", FormatHash(MediaID), MediaTime, SystemTime));
 	if (Parent.PlayCallback) Parent.PlayCallback(MediaID, MediaTime, SystemTime);
 }
 
@@ -250,11 +252,11 @@ bool CoreConnection::RequestNext(void)
 		Request.File.open(Request.Path, std::fstream::out);
 		if (!Request.File)
 		{
-			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Could not create core library file " << Request.Path);
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Could not create core library file ^0", Request.Path));
 			PendingRequests.pop();
 			continue;
 		}
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Requesting " << FormatHash(Request.ID) << " from chunk " << Request.Pieces.Next());
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Requesting ^0 from chunk ^1", FormatHash(Request.ID), Request.Pieces.Next()));
 		Send(NP1V1Request{}, Request.ID, Request.Pieces.Next());
 		PendingRequests.pop();
 		return true;
@@ -318,7 +320,7 @@ Core::Core(bool PruneOldItems) :
 	}
 {
 	Net.LogCallback = [&](std::string const &Message)
-		{ if (LogCallback) LogCallback(Important, "Network: " + Message); };
+		{ if (LogCallback) LogCallback(Important, Local("Network: ^0", Message)); };
 	bfs::create_directory(TempPath);
 }
 

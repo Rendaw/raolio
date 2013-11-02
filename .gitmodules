@@ -4,3 +4,6 @@
 [submodule "packaging"]
 	path = packaging
 	url = ../ren-packaging
+[submodule "app/translation"]
+	path = app/translation
+	url = ../ren-translation

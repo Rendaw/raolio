@@ -2,6 +2,7 @@
 #include "clientcore.h"
 #include "qtaux.h"
 #include "error.h"
+#include "translation/translation.h"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -108,7 +109,7 @@ struct ServerHistory : QAbstractItemModel
 		{
 			Settings->setArrayIndex(Index);
 			Items.emplace_back(
-				Settings->value(SCHandle, QString::fromUtf8("Ghost")).toString().toUtf8().data(),
+				Settings->value(SCHandle, QString::fromUtf8(Local("Ghost").c_str())).toString().toUtf8().data(),
 				Settings->value(SCHost, QString::fromUtf8("localhost")).toString().toUtf8().data(),
 				Settings->value(SCPort, 20578).toInt(),
 				Settings->value(SCRemember, false).toBool(),
@@ -121,7 +122,7 @@ struct ServerHistory : QAbstractItemModel
 	ServerInfo const &Get(size_t Index) const { assert(Index < Items.size()); return Items[Index]; }
 	ServerInfo GetDefault(void) const
 	{
-		if (Items.empty()) return {"Dog", "localhost", 20578, false, ""};
+		if (Items.empty()) return {Local("Dog"), "localhost", 20578, false, ""};
 		return Items[0];
 	}
 
@@ -208,7 +209,7 @@ void OpenPlayer(std::string const &Handle, std::string const &Host, uint16_t Por
 void OpenServerSelect(void)
 {
 	auto ConnectWindow = new QDialog();
-	ConnectWindow->setWindowTitle("Raolio - Select Server");
+	ConnectWindow->setWindowTitle(Local("Raolio - Select Server").c_str());
 	ConnectWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
 	struct ServerData
@@ -226,21 +227,21 @@ void OpenServerSelect(void)
 	auto ConnectLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
 	auto NameLayout = new QBoxLayout(QBoxLayout::LeftToRight);
-	auto NameLabel = new QLabel("Handle");
+	auto NameLabel = new QLabel(Local("Handle").c_str());
 	NameLayout->addWidget(NameLabel);
 	auto Name = new QLineEdit(QString::fromUtf8(ServerHistory->GetDefault().Handle.c_str()));
 	NameLayout->addWidget(Name);
 	ConnectLayout->addLayout(NameLayout);
 
 	auto ConnectEntryLayout = new QBoxLayout(QBoxLayout::LeftToRight);
-	auto ServerLabel = new QLabel("Server");
+	auto ServerLabel = new QLabel(Local("Server").c_str());
 	ConnectEntryLayout->addWidget(ServerLabel);
 	auto Server = new QLineEdit(QString::fromUtf8(ServerHistory->GetDefault().URI().c_str()));
 	ConnectEntryLayout->addWidget(Server);
 	ConnectLayout->addLayout(ConnectEntryLayout);
 
 	auto RememberEntryLayout = new QBoxLayout(QBoxLayout::LeftToRight);
-	auto Remember = new QCheckBox("Remember as");
+	auto Remember = new QCheckBox(Local("Remember as").c_str());
 	Remember->setChecked(false);
 	RememberEntryLayout->addWidget(Remember);
 	auto RememberName = new QLineEdit();
@@ -248,7 +249,7 @@ void OpenServerSelect(void)
 	RememberEntryLayout->addWidget(RememberName);
 	ConnectLayout->addLayout(RememberEntryLayout);
 
-	auto HistoryFrame = new QGroupBox("History");
+	auto HistoryFrame = new QGroupBox(Local("History").c_str());
 	HistoryFrame->setFlat(true);
 	auto HistoryLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
@@ -271,10 +272,10 @@ void OpenServerSelect(void)
 	ConnectLayout->addWidget(HistoryFrame);
 
 	auto ActionLayout = new QBoxLayout(QBoxLayout::RightToLeft);
-	auto Connect = new QPushButton("Connect");
+	auto Connect = new QPushButton(Local("Connect").c_str());
 	ActionLayout->addWidget(Connect);
 	Connect->setDefault(true);
-	auto Quit = new QPushButton("Quit");
+	auto Quit = new QPushButton(Local("Quit").c_str());
 	ActionLayout->addWidget(Quit);
 	ActionLayout->addStretch();
 	ConnectLayout->addLayout(ActionLayout);
@@ -297,14 +298,14 @@ void OpenServerSelect(void)
 		{
 			HistoricRemember->setText(QString::fromUtf8(Info.RememberAs.c_str()));
 			HistoricRemember->setEnabled(false);
-			ToggleHistoricRemember->setText("Forget");
+			ToggleHistoricRemember->setText(Local("Forget").c_str());
 			ToggleHistoricRemember->setEnabled(true);
 		}
 		else
 		{
 			HistoricRemember->setText(QString());
 			HistoricRemember->setEnabled(true);
-			ToggleHistoricRemember->setText("Remember");
+			ToggleHistoricRemember->setText(Local("Remember").c_str());
 			ToggleHistoricRemember->setEnabled(false);
 		}
 	};
@@ -352,11 +353,11 @@ void OpenServerSelect(void)
 		static Regex::Parser<std::string, Regex::Ignore, uint16_t> Parse("^([^:]*)(:([0-9]+))?$");
 		if (!Parse(Server->text().toUtf8().data(), Info.Host, Info.Port))
 		{
-			QMessageBox::warning(ConnectWindow, "Invalid server", "The server you entered is invalid or in an unsupported format.");
+			QMessageBox::warning(ConnectWindow, Local("Invalid server").c_str(), Local("The server you entered is invalid or in an unsupported format.").c_str());
 			Server->setFocus();
 			return;
 		}
-		std::cout << "Server '" << Server->text().toUtf8().data() << "' host '" << Info.Host << "' port '" << Info.Port << "'" << std::endl;
+		//std::cout << "Server '" << Server->text().toUtf8().data() << "' host '" << Info.Host << "' port '" << Info.Port << "'" << std::endl;
 
 		ConnectWindow->close();
 		ServerHistory->Finish(Info); // libstdc++ is broken, libc++ has probs with boost
@@ -564,10 +565,10 @@ struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 				if (Section == 0) return QVariant();
 				switch (Columns[Section - 1])
 				{
-					case PlaylistColumns::Track: return QString("#");
-					case PlaylistColumns::Artist: return QString("Artist");
-					case PlaylistColumns::Album: return QString("Album");
-					case PlaylistColumns::Title: return QString("Title");
+					case PlaylistColumns::Track: return QString(Local("#").c_str());
+					case PlaylistColumns::Artist: return QString(Local("Artist").c_str());
+					case PlaylistColumns::Album: return QString(Local("Album").c_str());
+					case PlaylistColumns::Title: return QString(Local("Title").c_str());
 					default: assert(false); return QVariant();
 				}
 			}
@@ -589,8 +590,8 @@ struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 				if (Index.column() == 0)
 					switch (Playlist[Index.row()].State)
 					{
-						case PlayState::Pause: return QString("=");
-						case PlayState::Play: return QString(">");
+						case PlayState::Pause: return QString(Local("=").c_str());
+						case PlayState::Play: return QString(Local(">").c_str());
 						default: return QVariant();
 					}
 				switch (Columns[Index.column() - 1])
@@ -744,7 +745,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 	{
 		// Widget setup
 		auto MainWindow = new QWidget();
-		MainWindow->setWindowTitle("Raolio");
+		MainWindow->setWindowTitle(Local("Raolio").c_str());
 		MainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
 		float InitialVolume = Settings->value(SCVolume, 0.75f).toFloat();
@@ -812,7 +813,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		auto PlaylistView = new QTreeView();
 		PlaylistView->setSortingEnabled(true);
 		PlaylistView->setModel(Playlist);
-		auto ConfigureColumns = new QAction("Select columns...", MainWindow);
+		auto ConfigureColumns = new QAction(Local("Select columns...").c_str(), MainWindow);
 		PlaylistView->header()->addAction(ConfigureColumns);
 		PlaylistView->header()->setContextMenuPolicy(Qt::ActionsContextMenu);
 		PlaylistView->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -838,27 +839,27 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		TransportStretch1->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 		TransportStretch1->setVisible(true);
 		PlaylistControls->addWidget(TransportStretch1);
-		auto Add = new QAction("Add", MainWindow);
+		auto Add = new QAction(Local("Add").c_str(), MainWindow);
 		Add->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));
 		Add->setIcon(*AddIcon);
 		PlaylistControls->addAction(Add);
-		auto OrderMenu = new QMenu("Order", MainWindow);
+		auto OrderMenu = new QMenu(Local("Order").c_str(), MainWindow);
 		OrderMenu->setIcon(*SortIcon);
-		auto Shuffle = new QAction("Shuffle", nullptr);
+		auto Shuffle = new QAction(Local("Shuffle").c_str(), nullptr);
 		OrderMenu->addAction(Shuffle);
-		auto AdvancedOrder = new QAction("Advanced...", MainWindow);
+		auto AdvancedOrder = new QAction(Local("Advanced...").c_str(), MainWindow);
 		OrderMenu->addAction(AdvancedOrder);
 		PlaylistControls->addAction(OrderMenu->menuAction());
 		PlaylistControls->addSeparator();
-		auto Previous = new QAction("Previous", MainWindow);
+		auto Previous = new QAction(Local("Previous").c_str(), MainWindow);
 		Previous->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Left));
 		Previous->setIcon(*LeftIcon);
 		PlaylistControls->addAction(Previous);
-		auto PlayStop = new QAction("Play", MainWindow);
+		auto PlayStop = new QAction(Local("Play").c_str(), MainWindow);
 		PlayStop->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Space));
 		PlayStop->setIcon(*PlayIcon);
 		PlaylistControls->addAction(PlayStop);
-		auto Next = new QAction("Next", MainWindow);
+		auto Next = new QAction(Local("Next").c_str(), MainWindow);
 		Next->setShortcut(QKeySequence(Qt::ALT + Qt::Key_Right));
 		Next->setIcon(*RightIcon);
 		PlaylistControls->addAction(Next);
@@ -888,14 +889,14 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		auto const SharedStop = [=](void)
 		{
 			Core->Stop();
-			PlayStop->setText("Play");
+			PlayStop->setText(Local("Play").c_str());
 			PlayStop->setIcon(*PlayIcon);
 		};
 
 		auto const SharedPlay = [=](void)
 		{
 			Core->Play();
-			PlayStop->setText("Pause");
+			PlayStop->setText(Local("Pause").c_str());
 			PlayStop->setIcon(*PauseIcon);
 		};
 
@@ -917,9 +918,9 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 
 		auto const SharedAdd = [=](void)
 		{
-			auto Dialog = new QFileDialog(MainWindow, "Add media...", QDir::homePath(),
-				"All media (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it);; "
-				"All files (*)");
+			auto Dialog = new QFileDialog(MainWindow, Local("Add media...").c_str(), QDir::homePath(),
+				(Local("All media") + " (*.mp3 *.m4a *.wav *.ogg *.wma *.flv *.flac *.mid *.mod *.s3c *.it *.asf *.aac);; " +
+				Local("All files") + " (*)").c_str());
 			Dialog->setFileMode(QFileDialog::ExistingFiles);
 			auto AlreadySelected = std::make_shared<bool>(false);
 			QObject::connect(Dialog, &QFileDialog::filesSelected, [=](const QStringList &Selected) mutable
@@ -972,19 +973,19 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				auto Playing = Playlist->GetCurrent();
 				Assert(Playing);
 				if (!WasSame)
-					SharedWrite(String() << "Playing " << Playing->Title);
+					SharedWrite(Local("Playing ^0", Playing->Title));
 			});
 		};
 		Core->PlayCallback = [=](void) { CrossThread->Transfer([=](void)
 		{
 			Playlist->Play();
-			PlayStop->setText("Pause");
+			PlayStop->setText(Local("Pause").c_str());
 			PlayStop->setIcon(*PauseIcon);
 		}); };
 		Core->StopCallback = [=](void) { CrossThread->Transfer([=](void)
 		{
 			Playlist->Stop();
-			PlayStop->setText("Play");
+			PlayStop->setText(Local("Play").c_str());
 			PlayStop->setIcon(*PlayIcon);
 		}); };
 		Core->EndCallback = [=](void)
@@ -1063,7 +1064,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 					String(Command) >> NewHandle >> NewHandle;
 					*Handle = NewHandle;
 				}
-				else SharedWrite("Unknown command.\n");
+				else SharedWrite(Local("Unknown command.\n"));
 			}
 			else
 			{
@@ -1076,11 +1077,11 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		QObject::connect(ConfigureColumns, &QAction::triggered, [=](bool)
 		{
 			auto Dialog = new QDialog{MainWindow};
-			Dialog->setWindowTitle("Raolio - Select columns");
+			Dialog->setWindowTitle(Local("Raolio - Select columns").c_str());
 
 			auto ColumnsLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
-			auto Label = new QLabel{"Column order:"};
+			auto Label = new QLabel{Local("Column order:").c_str()};
 			ColumnsLayout->addWidget(Label);
 
 			auto Table = new QTreeWidget;
@@ -1096,16 +1097,16 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 					auto Row = new QTreeWidgetItem;
 					Row->setFlags(Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled);
 					Row->setCheckState(0, Checked ? Qt::Checked : Qt::Unchecked);
-					auto Data = "";
+					std::string Data = "";
 					switch (Column)
 					{
-						case PlaylistColumns::Track: Data = "Track number"; break;
-						case PlaylistColumns::Album: Data = "Album"; break;
-						case PlaylistColumns::Artist: Data = "Artist"; break;
-						case PlaylistColumns::Title: Data = "Title"; break;
+						case PlaylistColumns::Track: Data = Local("Track number"); break;
+						case PlaylistColumns::Album: Data = Local("Album"); break;
+						case PlaylistColumns::Artist: Data = Local("Artist"); break;
+						case PlaylistColumns::Title: Data = Local("Title"); break;
 						default: assert(false); break;
 					}
-					Row->setData(0, Qt::DisplayRole, QString::fromUtf8(Data));
+					Row->setData(0, Qt::DisplayRole, QString::fromUtf8(Data.c_str()));
 					Row->setData(0, Qt::UserRole + 1, QVariant(static_cast<int>(Column)));
 					Table->addTopLevelItem(Row);
 				};
@@ -1141,10 +1142,10 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 			ColumnsLayout->addWidget(Table);
 
 			auto ActionLayout = new QBoxLayout(QBoxLayout::RightToLeft);
-			auto Save = new QPushButton("Save");
+			auto Save = new QPushButton(Local("Save").c_str());
 			ActionLayout->addWidget(Save);
 			Save->setDefault(true);
-			auto Cancel = new QPushButton("Cancel");
+			auto Cancel = new QPushButton(Local("Cancel").c_str());
 			ActionLayout->addWidget(Cancel);
 			ActionLayout->addStretch();
 			ColumnsLayout->addLayout(ActionLayout);
@@ -1218,11 +1219,11 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		QObject::connect(AdvancedOrder, &QAction::triggered, [=](bool)
 		{
 			auto Dialog = new QDialog{MainWindow};
-			Dialog->setWindowTitle("Raolio - Custom sort...");
+			Dialog->setWindowTitle(Local("Raolio - Custom sort...").c_str());
 
 			auto SortLayout = new QBoxLayout(QBoxLayout::TopToBottom);
 
-			auto Label = new QLabel{"Sort priority:"};
+			auto Label = new QLabel{Local("Sort priority:").c_str()};
 			SortLayout->addWidget(Label);
 
 			auto Table = new QTreeWidget;
@@ -1238,28 +1239,28 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 					auto Row = new QTreeWidgetItem;
 					Row->setFlags(Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled);
 					Row->setCheckState(0, Checked ? Qt::Checked : Qt::Unchecked);
-					auto Data = "";
+					std::string Data = "";
 					switch (Column)
 					{
 						case PlaylistColumns::Track:
-							if (!Reverse) Data = "Track number, ascending";
-							else Data = "Track number, descending";
+							if (!Reverse) Data = Local("Track number, ascending");
+							else Data = Local("Track number, descending");
 							break;
 						case PlaylistColumns::Album:
-							if (!Reverse) Data = "Album, ascending";
-							else Data = "Album, descending";
+							if (!Reverse) Data = Local("Album, ascending");
+							else Data = Local("Album, descending");
 							break;
 						case PlaylistColumns::Artist:
-							if (!Reverse) Data = "Artist, ascending";
-							else Data = "Artist, descending";
+							if (!Reverse) Data = Local("Artist, ascending");
+							else Data = Local("Artist, descending");
 							break;
 						case PlaylistColumns::Title:
-							if (!Reverse) Data = "Title, ascending";
-							else Data = "Title, descending";
+							if (!Reverse) Data = Local("Title, ascending");
+							else Data = Local("Title, descending");
 							break;
 						default: assert(false); break;
 					}
-					Row->setData(0, Qt::DisplayRole, QString::fromUtf8(Data));
+					Row->setData(0, Qt::DisplayRole, QString::fromUtf8(Data.c_str()));
 					Row->setData(0, Qt::UserRole + 1, QVariant(static_cast<int>(Column)));
 					Row->setData(0, Qt::UserRole + 2, QVariant(Reverse));
 					Table->addTopLevelItem(Row);
@@ -1315,10 +1316,10 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 			SortLayout->addWidget(Table);
 
 			auto ActionLayout = new QBoxLayout(QBoxLayout::RightToLeft);
-			auto Sort = new QPushButton("Sort");
+			auto Sort = new QPushButton(Local("Sort").c_str());
 			ActionLayout->addWidget(Sort);
 			Sort->setDefault(true);
-			auto Cancel = new QPushButton("Cancel");
+			auto Cancel = new QPushButton(Local("Cancel").c_str());
 			ActionLayout->addWidget(Cancel);
 			ActionLayout->addStretch();
 			SortLayout->addLayout(ActionLayout);
@@ -1374,13 +1375,14 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 	}
 	catch (ConstructionError const &Error)
 	{
-		QMessageBox::warning(0, "Error during startup", ((std::string)Error).c_str());
+		QMessageBox::warning(0, Local("Error during startup").c_str(), ((std::string)Error).c_str());
 		OpenServerSelect();
 	}
 }
 
 int main(int argc, char **argv)
 {
+	InitializeTranslation("raoliogui");
 	QApplication QTContext{argc, argv};
 	QTContext.setQuitOnLastWindowClosed(true);
 	QTContext.setStyleSheet(

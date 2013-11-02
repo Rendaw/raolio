@@ -5,9 +5,9 @@
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
-	if (!VLC) throw ConstructionError() << "Could not initialize libVLC.";
+	if (!VLC) throw ConstructionError() << Local("Could not initialize libVLC.");
 	VLCMediaPlayer = libvlc_media_player_new(VLC);
-	if (!VLCMediaPlayer) throw ConstructionError() << "Could not initialice libVLC media player.";
+	if (!VLCMediaPlayer) throw ConstructionError() << Local("Could not initialice libVLC media player.");
 }
 
 EngineWrapper::~EngineWrapper(void)
@@ -157,7 +157,7 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::
 	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename.string().c_str());
 	if (!VLCMedia)
 	{
-		if (LogCallback) LogCallback(String() << "Failed to open selected media, " << Filename << "; Removing from playlist.");
+		if (LogCallback) LogCallback(Local("Failed to open selected media, ^0; Removing from playlist.", Filename));
 		// TODO remove from playlist
 		return;
 	}

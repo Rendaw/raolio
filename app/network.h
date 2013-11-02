@@ -3,6 +3,7 @@
 
 #include "shared.h"
 #include "type.h"
+#include "translation/translation.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -29,16 +30,16 @@ template <typename ConnectionType> struct Network
 			if (this->Socket < 0)
 			{
 				struct hostent *HostInfo = gethostbyname(Host.c_str());
-				if (!HostInfo) throw ConstructionError() << "Failed to look up host (" << Host << ")";
+				if (!HostInfo) throw ConstructionError() << Local("Failed to look up host (^0)", Host);
 				this->Socket = socket(AF_INET, SOCK_STREAM, 0);
-				if (this->Socket < 0) throw ConstructionError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
+				if (this->Socket < 0) throw ConstructionError() << Local("Failed to open socket (^0:^1): ^2", Host, Port, strerror(errno));
 				sockaddr_in AddressInfo{};
 				AddressInfo.sin_family = AF_INET;
 				memcpy(&AddressInfo.sin_addr, HostInfo->h_addr_list[0], static_cast<size_t>(HostInfo->h_length));
 				AddressInfo.sin_port = htons(Port);
 
 				if (connect(this->Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-					throw ConstructionError() << "Failed to connect (" << Host << ":" << Port << "): " << strerror(errno);
+					throw ConstructionError() << Local("Failed to connect (^0:^1): ^2", Host, Port, strerror(errno));
 			}
 
 			ev_io_init(&ReadWatcher, InternalReadCallback, this->Socket, EV_READ);
@@ -160,15 +161,15 @@ template <typename ConnectionType> struct Network
 		Listener(std::string const &Host, uint16_t Port) : Host{Host}, Port{Port}
 		{
 			Socket = socket(AF_INET, SOCK_STREAM, 0);
-			if (Socket < 0) throw ConstructionError() << "Failed to open socket (" << Host << ":" << Port << "): " << strerror(errno);
+			if (Socket < 0) throw ConstructionError() << Local("Failed to open socket (^0:^1): ^2", Host, Port, strerror(errno));
 			sockaddr_in AddressInfo{};
 			AddressInfo.sin_family = AF_INET;
 			AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
 			AddressInfo.sin_port = htons(Port);
 
 			if (bind(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-				throw ConstructionError() << "Failed to bind (" << Host << ":" << Port << "): " << strerror(errno);
-			if (listen(Socket, 2) == -1) throw ConstructionError() << "Failed to listen on (" << Port << "): " << strerror(errno);
+				throw ConstructionError() << Local("Failed to bind (^0:^1): ^2", Host, Port, strerror(errno));
+			if (listen(Socket, 2) == -1) throw ConstructionError() << Local("Failed to listen on (^0): ^1", Port, strerror(errno));
 		}
 
 		~Listener(void) { assert(Socket >= 0); close(Socket); }
@@ -371,7 +372,7 @@ template <typename ConnectionType> struct Network
 							CleanConnections();
 							ConnectionType *ConnectionInfo;
 							try { ConnectionInfo = Socket->Accept(CreateConnection, EVLoop); }
-							catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(String() << "Failed to accept connection on " << Socket->Host << ":" << Socket->Port); return; }
+							catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Local("Failed to accept connection on ^0:^1", Socket->Host, Socket->Port)); return; }
 							ConnectionInfo->ReadCallback = ReadCallback;
 							std::lock_guard<std::mutex> Lock(This->Mutex);
 							This->Connections.push_back(std::unique_ptr<ConnectionType>{ConnectionInfo});

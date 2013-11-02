@@ -1,5 +1,7 @@
 #include "core.h"
 
+#include "translation/translation.h"
+
 #include <condition_variable>
 #include <csignal>
 
@@ -9,14 +11,15 @@ std::condition_variable Sleep;
 
 int main(int argc, char **argv)
 {
+	InitializeTranslation("raolioremote");
 	if (argc >= 2)
 	{
 		std::string Test = argv[1];
 		if ((Test == "--help") || (Test == "-h"))
 		{
-			std::cout <<
+			std::cout << Local(
 				"raolioremote [HOST] [PORT] [OPTIONS]\n"
-				"\tOPTION can be --add FILE, --play FILE, --stop, --message MESSAGE\n"
+				"\tOPTION can be --add FILE, --play FILE, --stop, --message MESSAGE\n")
 				<< std::flush;
 			return 0;
 		}
@@ -54,7 +57,7 @@ int main(int argc, char **argv)
 		std::cout << Priority << ": " << Message << std::endl;
 	};
 	Core.Open(false, Host, Port);
-	std::cout << "Connecting to " << Host << ":" << Port << std::endl;
+	std::cout << Local("Connecting to ^0:^1", Host, Port) << std::endl;
 
 	if (Command.empty()) // Go with the flow
 		{}
@@ -62,13 +65,13 @@ int main(int argc, char **argv)
 	{
 		if (CommandIndex + 1 >= argc)
 		{
-			std::cerr << "--add requires a filename." << std::endl;
+			std::cerr << Local("--add requires a filename.") << std::endl;
 			goto FullBreak;
 		}
 		auto Hash = HashFile(argv[CommandIndex + 1]);
 		if (!Hash)
 		{
-			std::cerr << "Invalid file to --add '" << argv[CommandIndex + 1] << "'" << std::endl;
+			std::cerr << Local("Invalid file to --add '^0'", argv[CommandIndex + 1]) << std::endl;
 			goto FullBreak;
 		}
 
@@ -78,13 +81,13 @@ int main(int argc, char **argv)
 	{
 		if (CommandIndex + 1 >= argc)
 		{
-			std::cerr << "--play requires a filename." << std::endl;
+			std::cerr << Local("--play requires a filename.") << std::endl;
 			goto FullBreak;
 		}
 		auto Hash = HashFile(argv[CommandIndex + 1]);
 		if (!Hash)
 		{
-			std::cerr << "Invalid file to --play '" << argv[CommandIndex + 1] << "'" << std::endl;
+			std::cerr << Local("Invalid file to --play '^0'", argv[CommandIndex + 1]) << std::endl;
 			goto FullBreak;
 		}
 
@@ -105,10 +108,10 @@ int main(int argc, char **argv)
 			Message << argv[Index] << " ";
 		Core.Transfer([&](void) { Core.Chat(Message.str()); });
 	}
-	else std::cerr << "Unknown command '" << Command << "'" << std::endl;
+	else std::cerr << Local("Unknown command '^0'", Command) << std::endl;
 	FullBreak:
 
-	std::cout << "Command issued.  Please wait until you are reasonably certain it has been sent and all subsequent actions have been completed to your satisfaction, then press ctrl+c to quit." << std::endl;
+	std::cout << Local("Command issued.  Please wait until you are reasonably certain it has been sent and all subsequent actions have been completed to your satisfaction, then press ctrl+c to quit.") << std::endl;
 
 	while (!Die)
 		Sleep.wait(SleepLock);
