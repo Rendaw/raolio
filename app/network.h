@@ -253,7 +253,7 @@ template <typename ConnectionType> struct Network
 
 	Optional<uint64_t> IdleSince(void)
 	{
-		Optional<uint64_t> Out;
+		auto Out = DeletedIdleSince;
 		for (auto &Connection : Connections)
 		{
 			if (Connection->IsDead() && (!Out || (Connection->GetDiedAt() > *Out)))
@@ -290,6 +290,7 @@ template <typename ConnectionType> struct Network
 		std::queue<ScheduleInfo> ScheduleQueue;
 
 		// Net-thread only
+		Optional<uint64_t> DeletedIdleSince;
 		std::list<std::unique_ptr<ConnectionType>> Connections;
 
 		// Used only in thread run
@@ -331,7 +332,12 @@ template <typename ConnectionType> struct Network
 			{
 				for (auto Connection = This->Connections.begin(); Connection != This->Connections.end();)
 				{
-					if ((*Connection)->IsDead()) Connection = This->Connections.erase(Connection);
+					if ((*Connection)->IsDead())
+					{
+						if (!This->DeletedIdleSince || ((*Connection)->GetDiedAt() > *This->DeletedIdleSince))
+							This->DeletedIdleSince = (*Connection)->GetDiedAt();
+						Connection = This->Connections.erase(Connection);
+					}
 					else ++Connection;
 				}
 			};
