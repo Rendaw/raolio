@@ -1371,7 +1371,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 
 		MainWindow->show();
 
-		Core->Open(false, Host, Port);
+		Core->Open(Host == "0.0.0.0" ? true : false, Host, Port);
 	}
 	catch (ConstructionError const &Error)
 	{

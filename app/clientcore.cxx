@@ -67,7 +67,7 @@ ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Play
 }
 
 void ClientCore::Open(bool Listen, std::string const &Host, uint16_t Port)
-	{ Parent.Open(false, Host, Port); }
+	{ Parent.Open(Listen, Host, Port); }
 
 void ClientCore::Add(HashT const &Hash, size_t Size, bfs::path const &Filename)
 {

@@ -8,14 +8,24 @@
 	<style>
 * { margin: 0px; padding: 0px; }
 body { background-color: rgb(240, 235, 235); height: 100%; width: 100%; font-family: sans-serif; }
-div { width: 100%; text-align: justify; }
+
+div#body { min-height: 100%; width: 600px; margin-left: auto; margin-right: auto; }
+div.block { width: 280px; height: 280px; margin: 10px; float: left; }
+div.borderouter { width: 100%; height: 100%; overflow: visible; position: relative; }
+div.ocolor1 { padding: 10px; left: -10px; top: -10px; background-color: rgb(255, 255, 255); }
+div.ocolor2 { padding: 20px; left: -20px; top: -20px; background-color: rgb(255, 255, 255); }
+div.ocolor3 { padding: 20px; left: -20px; top: -20px; background-color: rgb(245, 245, 245); }
+div.ocolor4 { padding: 35px; left: -35px; top: -35px; background-color: rgb(255, 255, 255); }
+div.ocolor5 { padding: 45px; left: -45px; top: -45px; background-color: rgb(240, 235, 235); }
+div.borderinner { width: 260px; height: 260px; display: flex; align-items: center; justify-content: center; text-align: justify; padding: 10px; position: relative; z-index: 999; }
+div.icolor1 { background-color: rgb(158, 214, 247); }
+div.icolor2 { background-color: rgb(236, 247, 253); }
+
 h2 { font-size: 1em; }
-div#body { background-color: rgb(255, 255, 255); min-height: 100%; width: 600px; margin-left: auto; margin-right: auto; }
-div.block { width: 260px; height: 260px; margin: 10px; padding: 10px; display: flex; align-items: center; justify-content: center; background-color: rgb(158, 214, 247); float: left; }
-div.block.color2 { background-color: rgb(236, 247, 253); }
 a { text-decoration: none; width: 100%; color: rgb(133, 86, 247); }
-.block { display: block; text-align: center; }
+a.block, span.block { display: block; text-align: center; }
 a:hover { text-decoration: underline; }
+a#final { font-size: 40px; padding-top: 40px; }
 img { vertical-align: bottom; width: 240px; height: 240px; }
 a img { border: 1px solid black; }
 td:first-child { font-family: monospace; padding-right: 8px; }
@@ -26,52 +36,75 @@ td { vertical-align: top; }
 <body>
 
 <div id="body">
-	<div class="block"><img src="logo.png" alt="Raolio"></div>
+	<div class="block"><div class="borderouter ocolor2"><div class="borderinner icolor1">
+		<img src="logo.png" alt="Raolio">
+	</div></div></div>
 
-	<div class="block color2"><div><strong>Raolio</strong> is a media player that synchronizes playback with other connected Raolio media players.  Raolio is intended for private media performances in office or long-distance situations where turning the volume up really high isn't a solution. <a class="block" href="https://github.com/Rendaw/raolio">Source</a><a class="block" href="http://zarbosoft.com/forum/index.php?board=10.0">Forums</a></div></div>
+	<div class="block"><div class="borderouter ocolor1"><div class="borderinner icolor2">
+		<div><strong>Raolio</strong> is a media player that synchronizes playback with other connected Raolio media players.  Raolio is intended for private media performances in office or long-distance situations where turning the volume up really high isn't a solution. <a class="block" href="https://github.com/Rendaw/raolio">Source</a><a class="block" href="http://zarbosoft.com/forum/index.php?board=10.0">Forums</a></div>
+	</div></div></div>
 
-	<div class="block"><div>
-		<h2>Get Raolio</h2>
-		The latest version is 0, updated Oct. 25, 2013.
-		<span class="block">Arch x64 <a href="raolioserver-0-1-x86_64.pkg.tar.xz">Server</a> <a href="raoliogui-0-1-x86_64.pkg.tar.xz">GUI</a> <a href="raoliocli-0-1-x86_64.pkg.tar.xz">CLI</a></span>
-		<!-- Can't build it for now: <a href="raolio_0_i386.deb">Version 0, Ubuntu 12+ 32-bit</a>-->
-		<span class="block">Ubuntu x64 <a href="raolioserver_0_amd64.deb">Server</a> <a href="raoliogui_0_amd64.deb">GUI</a> <a href="raoliocli_0_amd64.deb">CLI</a></span>
-	</div></div>
+	<div class="block"><div class="borderouter ocolor1"><div class="borderinner icolor1">
+		<div>
+			<h2>Get Raolio</h2>
+			The latest version is 0, updated Oct. 25, 2013.
+			<span class="block">Arch x64 <a href="raolioserver-0-1-x86_64.pkg.tar.xz">Server</a> <a href="raoliogui-0-1-x86_64.pkg.tar.xz">GUI</a> <a href="raoliocli-0-1-x86_64.pkg.tar.xz">CLI</a></span>
+			<!-- Can't build it for now: <a href="raolio_0_i386.deb">Version 0, Ubuntu 12+ 32-bit</a>-->
+			<span class="block">Ubuntu x64 <a href="raolioserver_0_amd64.deb">Server</a> <a href="raoliogui_0_amd64.deb">GUI</a> <a href="raoliocli_0_amd64.deb">CLI</a></span>
+		</div>
+	</div></div></div>
 
-	<div class="block"><a href="screenshot1.png"><img src="screenshot1thumb.png" alt="Screenshot"></a></div>
+	<div class="block"><div class="borderouter ocolor4"><div class="borderinner icolor1">
+		<a class="block" href="screenshot1.png"><img src="screenshot1thumb.png" alt="Screenshot"></a>
+	</div></div></div>
 
-	<div class="block"><a href="screenshot2.png"><img src="screenshot2thumb.png" alt="Screenshot"></a></div>
+	<div class="block"><div class="borderouter ocolor3"><div class="borderinner icolor1">
+		<a class="block" href="screenshot2.png"><img src="screenshot2thumb.png" alt="Screenshot"></a>
+	</div></div></div>
 
-	<div class="block color2"><div style="height: 100%;">
-		<h2>GUI Keyboard</h2>
-		<table>
-			<tr><td>alt a</td><td>Add files to playlist</td></tr>
-			<tr><td>alt left</td><td>Play previous song</td></tr>
-			<tr><td>alt right</td><td>Play next song</td></tr>
-			<tr><td>alt space</td><td>Pause/play</td></tr>
-		</table>
-	</div></div>
+	<div class="block"><div class="borderouter ocolor2"><div class="borderinner icolor2">
+		<div style="height: 100%;">
+			<h2>GUI Notes</h2>
+			Use host 0.0.0.0 (e.g. "0.0.0.0:20758") to start rather than connect to a server.
+			<br>
+			<br>
 
-	<div class="block color2"><div style="height: 100%;">
-		<h2>GUI Chat</h2>
-		<table>
-			<tr><td>/add</td><td>Add files to playlist</td></tr>
-			<tr><td>/list</td><td>List songs in playlist</td></tr>
-			<tr><td>/next</td><td>Play next song</td></tr>
-			<tr><td>/back</td><td>Play previous song</td></tr>
-			<tr><td>/play (MIN:SEC)</td><td>Resume song if paused, play from MIN:SEC if specified.</td></tr>
-			<tr><td>/stop</td><td>Pause playback.</td></tr>
-			<tr><td>/handle NAME</td><td>Change your name.</td></tr>
-			<tr><td>/quit</td><td>Quit</td></tr>
-		</table>
-	</div></div>
+			<h2>GUI Keyboard</h2>
+			<table>
+				<tr><td>alt a</td><td>Add files to playlist</td></tr>
+				<tr><td>alt left</td><td>Play previous song</td></tr>
+				<tr><td>alt right</td><td>Play next song</td></tr>
+				<tr><td>alt space</td><td>Pause/play</td></tr>
+			</table>
+		</div>
+	</div></div></div>
 
-	<div class="block"><div>
-		<div style="text-align: center;">&copy; 2013 Zarbosoft</div>
-		<a class="block" href="..">&lt; Zarbosoft</a>
-	</div></div>
+	<div class="block"><div class="borderouter ocolor1"><div class="borderinner icolor2">
+		<div style="height: 100%;">
+			<h2>GUI Chat</h2>
+			<table>
+				<tr><td>/add</td><td>Add files to playlist</td></tr>
+				<tr><td>/list</td><td>List songs in playlist</td></tr>
+				<tr><td>/next</td><td>Play next song</td></tr>
+				<tr><td>/back</td><td>Play previous song</td></tr>
+				<tr><td>/play (MIN:SEC)</td><td>Resume song if paused, play from MIN:SEC if specified.</td></tr>
+				<tr><td>/stop</td><td>Pause playback.</td></tr>
+				<tr><td>/handle NAME</td><td>Change your name.</td></tr>
+				<tr><td>/quit</td><td>Quit</td></tr>
+			</table>
+		</div>
+	</div></div></div>
+
+	<div class="block"><div class="borderouter ocolor5"><div class="borderinner icolor1">
+		<div>
+			<div style="text-align: center;">&copy; 2013 Zarbosoft</div>
+			<a class="block" href="..">&lt; Zarbosoft</a>
+		</div>
+	</div></div></div>
 
 	<br style="clear: both;">
+
+	<a class="block" id="final" href="#">...</a>
 </div>
 </body>
 
