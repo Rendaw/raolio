@@ -2,6 +2,10 @@
 
 #include <chrono>
 #include <ctime>
+#if defined(WINDOWS)
+#include <stdlib.h>
+#include <time.h>
+#endif
 
 static std::chrono::system_clock::time_point CalculateEpoch(void)
 {
@@ -9,12 +13,23 @@ static std::chrono::system_clock::time_point CalculateEpoch(void)
 	Calendar.tm_year = 100;
 
 	auto OriginalTZ = getenv("TZ");
+#if defined(WINDOWS)
+	_putenv("TZ=UTC");
+	_tzset();
+#else
 	setenv("TZ", "UTC", 1);
 	tzset();
+#endif
 	auto Out = std::chrono::system_clock::from_time_t(std::mktime(&Calendar));
+#if defined(WINDOWS)
+	if (OriginalTZ) _putenv((std::string("TZ=") + OriginalTZ).c_str());
+	else _putenv("TZ=");
+	_tzset();
+#else
 	if (OriginalTZ) setenv("TZ", OriginalTZ, 1);
 	else unsetenv("TZ");
 	tzset();
+#endif
 
 	return Out;
 }

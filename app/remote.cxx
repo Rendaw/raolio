@@ -7,7 +7,7 @@
 
 bool Die = false;
 std::mutex Mutex;
-std::condition_variable Sleep;
+std::condition_variable SleepSignal;
 
 int main(int argc, char **argv)
 {
@@ -24,8 +24,8 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-	std::unique_lock<std::mutex> SleepLock(Mutex);
-	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Die = true; Sleep.notify_all(); });
+	std::unique_lock<std::mutex> SleepSignalLock(Mutex);
+	std::signal(SIGINT, [](int) { std::lock_guard<std::mutex> Lock(Mutex); Die = true; SleepSignal.notify_all(); });
 
 	std::string Command;
 	int CommandIndex;
@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 	std::cout << Local("Command issued.  Please wait until you are reasonably certain it has been sent and all subsequent actions have been completed to your satisfaction, then press ctrl+c to quit.") << std::endl;
 
 	while (!Die)
-		Sleep.wait(SleepLock);
+		SleepSignal.wait(SleepSignalLock);
 
 	return 0;
 }

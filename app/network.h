@@ -5,11 +5,16 @@
 #include "type.h"
 #include "translation/translation.h"
 
+#if defined(WINDOWS)
+#include <winsock2.h>
+typedef int socklen_t;
+#else // WINDOWS
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#endif // WINDOWS
 #include <unistd.h>
 #include <ev.h>
 #include <mutex>
@@ -109,7 +114,7 @@ template <typename ConnectionType> struct Network
 					auto const Difference = Offset + Length - Buffer.size();
 					auto const OriginalLength = Buffer.size();
 					Buffer.resize(Offset + Length);
-					int Count = recv(This.Socket, &Buffer[OriginalLength], Difference, 0);
+					int Count = recv(This.Socket, (char *)&Buffer[OriginalLength], Difference, 0);
 					if (Count <= 0)
 					{
 						This.Die();

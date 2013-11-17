@@ -1,6 +1,12 @@
 DoOnce 'app/translation/Tupfile.lua'
 
-local LinkFlags = ' -pthread -lboost_system -lboost_filesystem -lboost_regex -lev'
+local LinkFlags = ' -lev'
+if tup.getconfig 'PLATFORM' ~= 'windows'
+then
+	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_regex'
+else
+	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_regex-mt -lintl -lws2_32'
+end
 
 local SharedObjects = Define.Objects
 {
@@ -43,6 +49,7 @@ then
 	local PackageDependencies = PackageDependencies ..
 		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3'" or '') ..
 		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', libqt5core5 (>= 5.0.2), libqt5widgets5 (>= 5.0.2), libqt5gui5 (>= 5.0.2), libvlc5 (>= 2.0.8-0)' or '')
+
 	Package = Define.Package
 	{
 		Name = 'raoliogui',
@@ -55,7 +62,7 @@ then
 	}
 end
 
-if tup.getconfig 'BUILDSERVER'
+if tup.getconfig 'BUILDSERVER' ~= 'false'
 then
 	raolioserver = Define.Executable
 	{
@@ -84,7 +91,7 @@ then
 	}
 end
 
-if tup.getconfig 'BUILDCLI'
+if tup.getconfig 'BUILDCLI' ~= 'false'
 then
 	raoliocli = Define.Executable
 	{
