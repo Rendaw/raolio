@@ -24,6 +24,56 @@ local SharedClientObjects = Define.Objects
 		+ 'clientcore.cxx'
 }
 
+local WindowsIconRes = Item()
+local ExtraCoreLibraries = Item()
+local ExtraBoostLibraries = Item()
+local ExtraVLCLibraries = Item()
+local ExtraQt5Libraries = Item()
+local ExtraBoostLicenses = Item()
+local ExtraVLCLicenses = Item()
+local ExtraQt5Licenses = Item()
+local ExtraGettextLicenses = Item()
+local ExtraLibEVLicenses = Item()
+if tup.getconfig 'PLATFORM' == 'windows'
+then
+	local WindowsIcon = Define.Raw
+	{
+		Inputs = Item 'raolio.png',
+		Outputs = Item 'raolio.ico',
+		Command = 'convert raolio.png raolio.ico'
+	}
+
+	local WindowsIconRc = Define.Write
+	{
+		Output = Item 'raolioicon.rc',
+		Text = 'id ICON "raolio.ico"'
+	}
+
+	WindowsIconRes = Define.Raw
+	{
+		Inputs = WindowsIcon + WindowsIconRc,
+		Outputs = Item 'raolioicon.res',
+		Command = tup.getconfig 'WINDRES' .. ' ' .. tostring(WindowsIconRc) .. ' -O coff -o raolioicon.res'
+	}
+
+	local AddExtras = function(Storage, Config)
+		local Added = 0
+		for Match in tup.getconfig(Config):gmatch '[^:]+'
+			do Storage = Storage + Match; Added = Added + 1 end
+		if Added == 0 then error(Config .. ' is empty!  Package will be broken without this config properly specified.') end
+		return Storage
+	end
+	ExtraCoreLibraries = AddExtras(ExtraCoreLibraries, 'WINDOWSCOREDLLS')
+	ExtraBoostLibraries = AddExtras(ExtraBoostLibraries, 'WINDOWSBOOSTDLLS')
+	ExtraVLCLibraries = AddExtras(ExtraVLCLibraries, 'WINDOWSVLCDLLS')
+	ExtraQt5Libraries = AddExtras(ExtraQt5Libraries, 'WINDOWSQT5DLLS')
+	ExtraBoostLicenses = AddExtras(ExtraBoostLicenses, 'WINDOWSBOOSTLICENSES')
+	ExtraVLCLicenses = AddExtras(ExtraVLCLicenses, 'WINDOWSVLCLICENSES')
+	ExtraQt5Licenses = AddExtras(ExtraQt5Licenses, 'WINDOWSQT5LICENSES')
+	ExtraGettextLicenses = AddExtras(ExtraGettextLicenses, 'WINDOWSGETTEXTLICENSES')
+	ExtraLibEVLicenses = AddExtras(ExtraLibEVLicenses, 'WINDOWSLIBEVLICENSES')
+end
+
 local PackageDependencies =
 	(tup.getconfig 'PLATFORM' == 'arch64' and "'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libev>=4.15-1'" or '') ..
 	(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libboost-all-dev (>= 1.53.0-0), libev4 (>= 1.4.11-1)' or '')
@@ -41,7 +91,7 @@ then
 	{
 		Name = 'raoliogui',
 		Sources = Item() + 'gui.cxx' + raolioguiMocOutputs,
-		Objects = SharedObjects + SharedClientObjects,
+		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
 		BuildFlags = tup.getconfig 'GUIBUILDFLAGS',
 		LinkFlags = LinkFlags .. ' ' .. tup.getconfig 'GUILINKFLAGS' .. ' -lvlc'
 	}
@@ -58,7 +108,9 @@ then
 		Resources = Item '*.png',
 		ArchLicenseStyle = 'LGPL',
 		DebianSection = 'sound',
-		Licenses = Item '../license-raolio.txt'
+		Licenses = Item('../license-raolio.txt'),
+		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
+		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibEVLicenses
 	}
 end
 
@@ -68,7 +120,7 @@ then
 	{
 		Name = 'raolioserver',
 		Sources = Item() + 'server.cxx',
-		Objects = SharedObjects,
+		Objects = SharedObjects + WindowsIconRes,
 		LinkFlags = LinkFlags
 	}
 
@@ -76,7 +128,7 @@ then
 	{
 		Name = 'raolioremote',
 		Sources = Item() + 'remote.cxx',
-		Objects = SharedObjects,
+		Objects = SharedObjects + WindowsIconRes,
 		LinkFlags = LinkFlags
 	}
 
@@ -87,7 +139,9 @@ then
 		Executables = raolioserver + raolioremote,
 		ArchLicenseStyle = 'LGPL3',
 		DebianSection = 'sound',
-		Licenses = Item '../license-raolio.txt'
+		Licenses = Item '../license-raolio.txt',
+		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries,
+		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraGettextLicenses + ExtraLibEVLicenses
 	}
 end
 
@@ -97,7 +151,7 @@ then
 	{
 		Name = 'raoliocli',
 		Sources = Item() + 'cli.cxx',
-		Objects = SharedObjects + SharedClientObjects,
+		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
 		LinkFlags = LinkFlags .. ' -lreadline -lvlc'
 	}
 
