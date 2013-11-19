@@ -29,6 +29,7 @@ local ExtraCoreLibraries = Item()
 local ExtraBoostLibraries = Item()
 local ExtraVLCLibraries = Item()
 local ExtraQt5Libraries = Item()
+local ExtraQt5PlatformLibraries = Item()
 local ExtraBoostLicenses = Item()
 local ExtraVLCLicenses = Item()
 local ExtraQt5Licenses = Item()
@@ -67,6 +68,7 @@ then
 	ExtraBoostLibraries = AddExtras(ExtraBoostLibraries, 'WINDOWSBOOSTDLLS')
 	ExtraVLCLibraries = AddExtras(ExtraVLCLibraries, 'WINDOWSVLCDLLS')
 	ExtraQt5Libraries = AddExtras(ExtraQt5Libraries, 'WINDOWSQT5DLLS')
+	ExtraQt5PlatformLibraries = AddExtras(ExtraQt5PlatformLibraries, 'WINDOWSQT5PLATFORMDLLS')
 	ExtraBoostLicenses = AddExtras(ExtraBoostLicenses, 'WINDOWSBOOSTLICENSES')
 	ExtraVLCLicenses = AddExtras(ExtraVLCLicenses, 'WINDOWSVLCLICENSES')
 	ExtraQt5Licenses = AddExtras(ExtraQt5Licenses, 'WINDOWSQT5LICENSES')
@@ -86,6 +88,12 @@ then
 		Outputs = Item 'moc_qtaux.cxx',
 		Command = 'moc qtaux.h > moc_qtaux.cxx'
 	}
+
+	local LinkFlags = LinkFlags
+	if tup.getconfig 'PLATFORM' == 'windows'
+	then
+		LinkFlags = LinkFlags .. ' -mwindows'
+	end
 
 	raoliogui = Define.Executable
 	{
@@ -110,6 +118,7 @@ then
 		DebianSection = 'sound',
 		Licenses = Item('../license-raolio.txt'),
 		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
+		ExtraQt5PlatformLibraries = ExtraQt5PlatformLibraries,
 		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibEVLicenses
 	}
 end
