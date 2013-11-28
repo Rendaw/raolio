@@ -5,7 +5,7 @@
 #include "type.h"
 #include "translation/translation.h"
 
-#if defined(WINDOWS)
+/*#if defined(WINDOWS)
 #include <winsock2.h>
 typedef int socklen_t;
 #else // WINDOWS
@@ -14,9 +14,9 @@ typedef int socklen_t;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#endif // WINDOWS
+#endif // WINDOWS*/
 #include <unistd.h>
-#include <ev.h>
+#include <uv.h>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -25,32 +25,55 @@ typedef int socklen_t;
 
 template <typename ConnectionType> struct Network
 {
-	typedef std::function<ConnectionType *(std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop)> CreateConnectionCallback;
+	template <typename DataType, typename ...ExtraTypes> struct UVData : DataType
+	{
+		std::function<void(UVData<DataType, ExtraTypes...> *, ExtraTypes ...)> Callback;
+		UVData(void) {}
+		UVData(decltype(Callback) const &Callback) : Callback(Callback) {}
+		template <typename Whatever> static void Fix(Whatever *Data, ExtraTypes ...Extras)
+		{
+			auto This = reinterpret_cast<UVData<DataType, ExtraTypes...> *>(Data);
+			This->Callback(This, Extras...);
+		}
+	};
+	template <typename DataType> struct UVWatcherData : DataType
+	{
+		std::function<void(UVWatcherData<DataType> *)> Callback;
+		UVWatcherData(void) {}
+		UVWatcherData(std::function<void(UVWatcherData<DataType> *)> const &Callback) : Callback(Callback) {}
+
+		static void PreCallback(DataType *Data, int Error)
+			{ assert(Error == 0); auto This = static_cast<UVWatcherData<DataType> *>(Data); This->Callback(This); }
+	};
+
+	typedef std::function<ConnectionType *(std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(ConnectionType &Socket)> const &ReadCallback)> CreateConnectionCallback;
 
 	struct Connection
 	{
-		Connection(std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop, ConnectionType &DerivedThis) :
-			Dead{false}, Host{Host}, Port{Port}, Socket{Socket}, EVLoop{EVLoop}, ReadBuffer{*this}, ReadWatcher{DerivedThis}, WriteWatcher{DerivedThis}
+		Connection(std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(ConnectionType &Socket)> const &ReadCallback, ConnectionType &DerivedThis) :
+			Dead{false}, Host{Host}, Port{Port}, ReadBuffer{*this}, ReadCallback{ReadCallback}, Watcher{Watcher}, This(DerivedThis), WriteCounter(0)
 		{
-			if (this->Socket < 0)
-			{
-				struct hostent *HostInfo = gethostbyname(Host.c_str());
-				if (!HostInfo) throw ConstructionError() << Local("Failed to look up host (^0)", Host);
-				this->Socket = socket(AF_INET, SOCK_STREAM, 0);
-				if (this->Socket < 0) throw ConstructionError() << Local("Failed to open socket (^0:^1): ^2", Host, Port, strerror(errno));
-				sockaddr_in AddressInfo{};
-				AddressInfo.sin_family = AF_INET;
-				memcpy(&AddressInfo.sin_addr, HostInfo->h_addr_list[0], static_cast<size_t>(HostInfo->h_length));
-				AddressInfo.sin_port = htons(Port);
-
-				if (connect(this->Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-					throw ConstructionError() << Local("Failed to connect (^0:^1): ^2", Host, Port, strerror(errno));
-			}
-
-			ev_io_init(&ReadWatcher, InternalReadCallback, this->Socket, EV_READ);
-			ev_io_start(EVLoop, &ReadWatcher);
-			ev_io_init(&WriteWatcher, InternalWriteCallback, this->Socket, EV_WRITE);
-			ev_io_start(EVLoop, &WriteWatcher);
+			assert(Watcher);
+			Watcher->data = &DerivedThis;
+			uv_read_start(reinterpret_cast<uv_stream_t *>(Watcher),
+				[](uv_handle_t *Watcher, size_t Length, uv_buf_t *Buffer)
+				{
+					ConnectionType *This = static_cast<ConnectionType *>(Watcher->data);
+					This->ReadBuffer.Allocate(Length, Buffer);
+				},
+				[](uv_stream_t *Watcher, ssize_t Length, uv_buf_t const *Buffer)
+				{
+					ConnectionType *This = static_cast<ConnectionType *>(Watcher->data);
+					if (Length < 0)
+					{
+						This->Die();
+						return;
+					}
+					if (Length == 0) return;
+					This->ReadBuffer.Filled(Length);
+					This->ReadCallback(*This);
+				}
+			);
 		}
 
 		~Connection(void) { if (!Dead) Die(); }
@@ -59,32 +82,49 @@ template <typename ConnectionType> struct Network
 		bool IsDead(void) { return Dead; }
 		uint64_t GetDiedAt(void) { assert(Dead); return DiedAt; }
 
-		void WakeIdleWrite(void) { if (Dead) return; ev_io_start(EVLoop, &WriteWatcher); }
+		void WakeIdleWrite(void) { if (Dead) return; This.IdleWrite(); }
 
 		void RawSend(std::vector<uint8_t> const &Data)
 		{
 			if (Dead) return;
-			int Sent = write(Socket, &Data[0], Data.size());
-			if (Sent == -1) if (errno == EPIPE) Die();
-			// TODO do something if sent = -1 or != Data.size?
+			uv_buf_t Buffers[1]{};
+
+			struct WriteRequestInfo : uv_write_t
+			{
+				ConnectionType &This;
+				std::vector<uint8_t> Data;
+				uint64_t WriteID;
+				WriteRequestInfo(ConnectionType &This, std::vector<uint8_t> const &Data, uint64_t WriteID) : This(This), Data(Data), WriteID(WriteID) {}
+			};
+			auto Request = new WriteRequestInfo{This, Data, ++WriteCounter};
+
+			Buffers[0].base = reinterpret_cast<char *>(&Request->Data[0]);
+			Buffers[0].len = Request->Data.size();
+			int Error = uv_write(Request, reinterpret_cast<uv_stream_t *>(Watcher), Buffers, 1,
+				[](uv_write_t *Request, int Error)
+				{
+					std::unique_ptr<WriteRequestInfo> Info(static_cast<WriteRequestInfo *>(Request));
+					if (Error) { Info->This.Die(); return; }
+					if (Info->WriteID == Info->This.WriteCounter) Info->This.IdleWrite();
+				}
+			);
+			if (Error) Die();
 		}
 
 		template <typename MessageType, typename... ArgumentTypes> void Send(MessageType, ArgumentTypes const &... Arguments)
 		{
 			if (Dead) return;
-			auto const &Data = MessageType::Write(Arguments...);
-			RawSend(Data);
+			auto Data = MessageType::Write(Arguments...);
+			RawSend(std::move(Data));
 		}
 
 		void Die(void)
 		{
 			assert(!Dead);
 
-			ev_io_stop(EVLoop, &ReadWatcher);
-			ev_io_stop(EVLoop, &WriteWatcher);
-
-			assert(Socket >= 0);
-			close(Socket);
+			assert(Watcher);
+			uv_read_stop(reinterpret_cast<uv_stream_t *>(Watcher));
+			uv_close(reinterpret_cast<uv_handle_t *>(Watcher), [](uv_handle_t *Watcher) { delete reinterpret_cast<uv_tcp_t *>(Watcher); });
 
 			Dead = true;
 			DiedAt = GetNow();
@@ -98,99 +138,76 @@ template <typename ConnectionType> struct Network
 
 			std::string Host;
 			uint16_t Port;
-			int Socket;
-
-			struct ev_loop *EVLoop;
+			uv_tcp_t *Watcher;
 
 			struct ReadBufferType
 			{
-				ReadBufferType(Connection &This) : This(This) {}
+				ReadBufferType(Connection &This) : This(This), Used(0) {}
+
+				void Allocate(size_t Length, uv_buf_t *Out)
+				{
+					if (Length == 0)
+					{
+						Out->len = 0;
+						return;
+					}
+					if (Buffer.size() - Used < Length)
+						Buffer.resize(Used + Length);
+					Out->base = reinterpret_cast<char *>(&Buffer[Used]);
+					Out->len = Length;
+				}
+
+				void Filled(size_t Length)
+					{ Used += Length; }
 
 				Protocol::SubVector<uint8_t> Read(size_t Length, size_t Offset = 0)
 				{
-					assert(This.Socket >= 0);
 					if (Length == 0) return {};
-					if (Offset + Length <= Buffer.size()) return {Buffer, Offset, Length};
-					auto const Difference = Offset + Length - Buffer.size();
-					auto const OriginalLength = Buffer.size();
-					Buffer.resize(Offset + Length);
-					int Count = recv(This.Socket, (char *)&Buffer[OriginalLength], Difference, 0);
-					if (Count <= 0)
-					{
-						This.Die();
-						Buffer.resize(OriginalLength);
-						return {};
-					}
-					if (Count < Difference) { Buffer.resize(OriginalLength + Count); return {}; }
+					if (Offset + Length > Used) return {};
 					return {Buffer, Offset, Length};
 				}
 
 				void Consume(size_t Length)
 				{
-					assert(This.Socket >= 0);
+					assert(This.Watcher >= 0);
 					assert(Length > 0);
-					assert(Length <= Buffer.size());
+					assert(Length <= Used);
 					Buffer.erase(Buffer.begin(), Buffer.begin() + Length);
+					Used -= Length;
 				}
 
 				Connection &This;
+				size_t Used;
 				std::vector<uint8_t> Buffer;
 			} ReadBuffer;
 
 			std::function<void(ConnectionType &Socket)> ReadCallback;
 
-			struct Watcher : ev_io
-			{
-				Watcher(ConnectionType &This) : This(This) {}
-				ConnectionType &This;
-			} ReadWatcher, WriteWatcher;
+			ConnectionType &This;
 
-			static void InternalReadCallback(struct ev_loop *, ev_io *Data, int EventFlags)
-			{
-				assert(EventFlags & EV_READ);
-				auto &Watcher = *static_cast<Network<ConnectionType>::Connection::Watcher *>(Data);
-				Watcher.This.ReadCallback(Watcher.This);
-			}
-
-			static void InternalWriteCallback(struct ev_loop *, ev_io *Data, int EventFlags)
-			{
-				assert(EventFlags & EV_WRITE);
-				auto &Watcher = *static_cast<Network<ConnectionType>::Connection::Watcher *>(Data);
-				if (!Watcher.This.IdleWrite())
-					ev_io_stop(Watcher.This.EVLoop, Data);
-			}
+			uint64_t WriteCounter;
 	};
 
 	struct Listener
 	{
-		Listener(std::string const &Host, uint16_t Port) : Host{Host}, Port{Port}
+		Listener(std::string const &Host, uint16_t Port) : Host{Host}, Port{Port}, Watcher(new UVData<uv_tcp_t>)
 		{
-			Socket = socket(AF_INET, SOCK_STREAM, 0);
-			if (Socket < 0) throw ConstructionError() << Local("Failed to open socket (^0:^1): ^2", Host, Port, strerror(errno));
-			sockaddr_in AddressInfo{};
-			AddressInfo.sin_family = AF_INET;
-			AddressInfo.sin_addr.s_addr = inet_addr(Host.c_str());
-			AddressInfo.sin_port = htons(Port);
-
-			if (bind(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), sizeof(AddressInfo)) == -1)
-				throw ConstructionError() << Local("Failed to bind (^0:^1): ^2", Host, Port, strerror(errno));
-			if (listen(Socket, 2) == -1) throw ConstructionError() << Local("Failed to listen on (^0): ^1", Port, strerror(errno));
+			uv_tcp_init(uv_default_loop(), Watcher);
+			int Error;
+			struct sockaddr_in Address;
+			if (Error = uv_ip4_addr(Host.c_str(), Port, &Address))
+				throw ConstructionError() << Local("Invalid address (^0:^1)", Host, Port);
+			if (Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address)))
+				throw ConstructionError() << Local("Failed to bind (^0:^1): ^2", Host, Port, uv_strerror(Error));
+			if (Error = uv_listen(reinterpret_cast<uv_stream_t *>(Watcher), 2, [](uv_stream_t *Data, int Error) { assert(Error = 0); UVData<uv_tcp_t>::Fix(Data); }))
+				throw ConstructionError() << Local("Failed to listen on (^0:^1): ^2", Host, Port, uv_strerror(Error));
 		}
 
-		~Listener(void) { assert(Socket >= 0); close(Socket); }
-
-		ConnectionType *Accept(CreateConnectionCallback const &CreateConnection, struct ev_loop *EVLoop)
-		{
-			sockaddr_in AddressInfo{};
-			socklen_t AddressInfoLength = sizeof(AddressInfo);
-			int ConnectionSocket = accept(Socket, reinterpret_cast<sockaddr *>(&AddressInfo), &AddressInfoLength);
-			if (ConnectionSocket == -1) return nullptr; // Log?
-			return CreateConnection(inet_ntoa(AddressInfo.sin_addr), AddressInfo.sin_port, ConnectionSocket, EVLoop);
-		}
+		~Listener(void) { uv_close(reinterpret_cast<uv_handle_t *>(Watcher), [](uv_handle_t *Watcher) { delete reinterpret_cast<UVData<uv_tcp_t> *>(Watcher); }); }
 
 		std::string Host;
 		uint16_t Port;
-		int Socket;
+		UVData<uv_tcp_t> *Watcher;
 	};
 
 	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
@@ -299,28 +316,16 @@ template <typename ConnectionType> struct Network
 		Optional<uint64_t> DeletedIdleSince;
 		std::list<std::unique_ptr<ConnectionType>> Connections;
 
-		// Used only in thread run
-		template <typename DataType> struct EVData : DataType
-		{
-			std::function<void(EVData<DataType> *)> Callback;
-			EVData(std::function<void(EVData<DataType> *)> const &Callback) : Callback(Callback) {}
-
-			static void PreCallback(struct ev_loop *, DataType *Data, int EventFlags)
-				{ auto This = static_cast<EVData<DataType> *>(Data); This->Callback(This); }
-		};
-
 		// Thread implementation
 		template <typename ...MessageTypes> static void Run(Network *This, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
 		{
 			std::unique_lock<std::mutex> Lock(This->Mutex); // Waiting for init signal wait
 
 			// Intermediate event callback storage
-			std::list<std::unique_ptr<EVData<ev_io>>> IOCallbacks;
-			std::list<std::unique_ptr<EVData<ev_timer>>> TimerCallbacks;
+			auto const TimerCallbackFree = [](UVWatcherData<uv_timer_t> *Data) { uv_close(reinterpret_cast<uv_handle_t *>(Data), [](uv_handle_t *Data) { delete reinterpret_cast<UVWatcherData<uv_timer_t> *>(Data); }); };
+			std::list<std::unique_ptr<UVWatcherData<uv_timer_t>, decltype(TimerCallbackFree)>> TimerCallbacks;
 
 			// Set up intermediary event handlers and libev loop
-			struct ev_loop *EVLoop = ev_default_loop(0);
-
 			Protocol::Reader<MessageTypes...> Reader;
 
 			std::list<std::unique_ptr<Listener>> Listeners;
@@ -348,10 +353,10 @@ template <typename ConnectionType> struct Network
 				}
 			};
 
-			EVData<ev_async> AsyncOpenData([&](EVData<ev_async> *)
+			auto AsyncOpenData = new UVWatcherData<uv_async_t>([&](UVWatcherData<uv_async_t> *)
 			{
 				/// Exit loop if dying
-				if (This->Die) { ev_break(EVLoop); return; }
+				if (This->Die) { uv_stop(uv_default_loop()); return; }
 
 				while (true)
 				{
@@ -371,37 +376,72 @@ template <typename ConnectionType> struct Network
 						try { Socket = new Listener{Directive.Host, Directive.Port}; }
 						catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						Listeners.emplace_back(Socket);
-
-						auto ListenerData = new EVData<ev_io>([&, Socket](EVData<ev_io> *)
+						Socket->Watcher->Callback = [&, Socket](UVData<uv_tcp_t> *ListenWatcher)
 						{
 							CleanConnections();
-							ConnectionType *ConnectionInfo;
-							try { ConnectionInfo = Socket->Accept(CreateConnection, EVLoop); }
-							catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Local("Failed to accept connection on ^0:^1", Socket->Host, Socket->Port)); return; }
-							ConnectionInfo->ReadCallback = ReadCallback;
+
+							auto Watcher = new uv_tcp_t;
+							uv_tcp_init(uv_default_loop(), Watcher);
+
+							uv_accept(reinterpret_cast<uv_stream_t *>(Socket->Watcher), reinterpret_cast<uv_stream_t *>(Watcher));
+
+							auto *ConnectionInfo = CreateConnection("@" + Socket->Host, Socket->Port, Watcher, ReadCallback);
+
 							std::lock_guard<std::mutex> Lock(This->Mutex);
 							This->Connections.push_back(std::unique_ptr<ConnectionType>{ConnectionInfo});
-						});
-						IOCallbacks.emplace_back(ListenerData);
-						ev_io_init(ListenerData, EVData<ev_io>::PreCallback, Socket->Socket, EV_READ);
-						ev_io_start(EVLoop, ListenerData);
+						};
 					}
 					else
 					{
-						CleanConnections();
-						ConnectionType *Socket = nullptr;
-						try { Socket = CreateConnection(Directive.Host, Directive.Port, -1, EVLoop); }
-						catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
-						Socket->ReadCallback = ReadCallback;
-						This->Connections.emplace_back(Socket);
+						using AddressRequestInfo = UVData<uv_getaddrinfo_t, int, struct addrinfo *>;
+						auto AddressRequest = new AddressRequestInfo { [=, &This](AddressRequestInfo *Info, int Error, struct addrinfo *AddressInfo)
+						{
+							auto Free1 = std::unique_ptr<AddressRequestInfo>(Info);
+							auto Free2 = std::unique_ptr<struct addrinfo, decltype(&uv_freeaddrinfo)>(AddressInfo, &uv_freeaddrinfo);
+
+							if (Error)
+							{
+								if (This->LogCallback)
+									This->LogCallback(Local("Failed to look up host ^0:^1", Directive.Host, Directive.Port));
+								return;
+							}
+
+							auto Watcher = new uv_tcp_t;
+							uv_tcp_init(uv_default_loop(), Watcher);
+
+							using ConnectRequestInfo = UVData<uv_connect_t, int>;
+							auto ConnectRequest = new ConnectRequestInfo{ [=, &This](ConnectRequestInfo *Info, int Error)
+							{
+								auto Free1 = std::unique_ptr<ConnectRequestInfo>(Info);
+								if (Error)
+								{
+									uv_close(reinterpret_cast<uv_handle_t *>(Watcher), [](uv_handle_t *Watcher) { delete reinterpret_cast<uv_tcp_t *>(Watcher); });
+									if (This->LogCallback)
+										This->LogCallback(Local("Failed to connect to ^0:^1", Directive.Host, Directive.Port));
+									return;
+								}
+
+								ConnectionType *Socket = CreateConnection(Directive.Host, Directive.Port, Watcher, ReadCallback);
+
+								std::lock_guard<std::mutex> Lock(This->Mutex);
+								CleanConnections();
+								This->Connections.emplace_back(Socket);
+							}};
+							uv_tcp_connect(ConnectRequest, Watcher, reinterpret_cast<struct sockaddr *>(AddressInfo->ai_addr),
+								[](uv_connect_t *Info, int Error)
+									{ ConnectRequestInfo::Fix(static_cast<ConnectRequestInfo *>(Info), Error); });
+						}};
+						uv_getaddrinfo(uv_default_loop(), AddressRequest,
+							[](uv_getaddrinfo_t *Info, int Error, struct addrinfo *AddressInfo)
+								{ AddressRequestInfo::Fix(static_cast<AddressRequestInfo *>(Info), Error, AddressInfo); },
+							Directive.Host.c_str(), nullptr, nullptr);
 					}
 				}
 			});
-			ev_async_init(&AsyncOpenData, EVData<ev_async>::PreCallback);
-			This->NotifyOpen = [&EVLoop, &AsyncOpenData](void) { ev_async_send(EVLoop, &AsyncOpenData); };
-			ev_async_start(EVLoop, &AsyncOpenData);
+			uv_async_init(uv_default_loop(), AsyncOpenData, UVWatcherData<uv_async_t>::PreCallback);
+			This->NotifyOpen = [&AsyncOpenData](void) { uv_async_send(AsyncOpenData); };
 
-			EVData<ev_async> AsyncTransferData([&](EVData<ev_async> *)
+			auto AsyncTransferData = new UVWatcherData<uv_async_t>([&](UVWatcherData<uv_async_t> *)
 			{
 				while (true)
 				{
@@ -418,11 +458,10 @@ template <typename ConnectionType> struct Network
 					Callback();
 				}
 			});
-			ev_async_init(&AsyncTransferData, EVData<ev_async>::PreCallback);
-			This->NotifyTransfer = [&](void) { ev_async_send(EVLoop, &AsyncTransferData); };
-			ev_async_start(EVLoop, &AsyncTransferData);
+			uv_async_init(uv_default_loop(), AsyncTransferData, UVWatcherData<uv_async_t>::PreCallback);
+			This->NotifyTransfer = [&](void) { uv_async_send(AsyncTransferData); };
 
-			EVData<ev_async> AsyncScheduleData([&](EVData<ev_async> *)
+			auto AsyncScheduleData = new UVWatcherData<uv_async_t>([&](UVWatcherData<uv_async_t> *)
 			{
 				while (true)
 				{
@@ -436,7 +475,7 @@ template <typename ConnectionType> struct Network
 					This->ScheduleQueue.pop();
 					This->Mutex.unlock();
 
-					auto TimerData = new EVData<ev_timer>([&, Directive](EVData<ev_timer> *TimerData)
+					auto TimerData = new UVWatcherData<uv_timer_t>([&, Directive](UVWatcherData<uv_timer_t> *TimerData)
 					{
 						Directive.Callback();
 						for (auto Callback = TimerCallbacks.begin(); ; Callback++)
@@ -449,36 +488,41 @@ template <typename ConnectionType> struct Network
 							}
 						}
 					});
-					ev_timer_init(TimerData, EVData<ev_timer>::PreCallback, Directive.Seconds, 0);
-					TimerCallbacks.emplace_back(TimerData);
-					ev_timer_start(EVLoop, TimerData);
+					uv_timer_init(uv_default_loop(), TimerData);
+					TimerCallbacks.emplace_back(TimerData, TimerCallbackFree);
+					uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, Directive.Seconds, 0);
 				}
 			});
-			ev_async_init(&AsyncScheduleData, EVData<ev_async>::PreCallback);
-			This->NotifySchedule = [&](void) { ev_async_send(EVLoop, &AsyncScheduleData); };
-			ev_async_start(EVLoop, &AsyncScheduleData);
+			uv_async_init(uv_default_loop(), AsyncScheduleData, UVWatcherData<uv_async_t>::PreCallback);
+			This->NotifySchedule = [&](void) { uv_async_send(AsyncScheduleData); };
 
 			if (TimerPeriod)
 			{
-				auto TimerData = new EVData<ev_timer>([&](EVData<ev_timer> *Timer)
+				auto TimerData = new UVWatcherData<uv_timer_t>([&](UVWatcherData<uv_timer_t> *Timer)
 				{
 					auto Now = GetNow();
 					for (auto &Connection : This->Connections) Connection->HandleTimer(Now);
-					ev_timer_set(Timer, *TimerPeriod, 0);
-					ev_timer_start(EVLoop, Timer);
+					uv_timer_again(Timer);
 				});
-				ev_timer_init(TimerData, EVData<ev_timer>::PreCallback, *TimerPeriod, 0);
-				TimerCallbacks.emplace_back(TimerData);
-				ev_timer_start(EVLoop, TimerData);
+				uv_timer_init(uv_default_loop(), TimerData);
+				TimerCallbacks.emplace_back(TimerData, TimerCallbackFree);
+				uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, *TimerPeriod, *TimerPeriod);
 			}
 
 			This->InitSignal.notify_all();
 
 			Lock.unlock();
 
-			ev_run(EVLoop, 0);
+			uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 
+			Lock.lock();
 			This->Connections.clear();
+			TimerCallbacks.clear();
+			uv_close(reinterpret_cast<uv_handle_t *>(AsyncOpenData), [](uv_handle_t *Data) { delete reinterpret_cast<UVWatcherData<uv_async_t> *>(Data); });
+			uv_close(reinterpret_cast<uv_handle_t *>(AsyncTransferData), [](uv_handle_t *Data) { delete reinterpret_cast<UVWatcherData<uv_async_t> *>(Data); });
+			uv_close(reinterpret_cast<uv_handle_t *>(AsyncScheduleData), [](uv_handle_t *Data) { delete reinterpret_cast<UVWatcherData<uv_async_t> *>(Data); });
+
+			uv_run(uv_default_loop(), UV_RUN_NOWAIT);
 		}
 };
 

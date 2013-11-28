@@ -81,8 +81,8 @@ void FilePieces::Set(uint64_t Index)
 	Runs.swap(NewRuns);
 }
 
-CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) :
-	Network<CoreConnection>::Connection{Host, Port, Socket, EVLoop, *this}, Parent(Parent), SentPlayState{false}
+CoreConnection::CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(CoreConnection &Socket)> const &ReadCallback) :
+	Network<CoreConnection>::Connection{Host, Port, Watcher, ReadCallback, *this}, Parent(Parent), SentPlayState{false}
 {
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Established connection to ^0:^1", Host, Port));
 }
@@ -278,7 +278,7 @@ Core::Core(bool PruneOldItems) :
 	Net
 	{
 		std::make_tuple(NP1V1Clock{}, NP1V1Prepare{}, NP1V1Request{}, NP1V1Data{}, NP1V1Remove{}, NP1V1Play{}, NP1V1Stop{}, NP1V1Chat{}),
-		[this](std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop) // Create connection
+		[this](std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(CoreConnection &Socket)> const &ReadCallback) // Create connection
 		{
 			auto IdleTime = Net.IdleSince();
 			if (Prune && IdleTime && (GetNow() - *IdleTime > 1000 * 60 * 60))
@@ -311,7 +311,7 @@ Core::Core(bool PruneOldItems) :
 				bfs::remove_all(TempPath);
 				bfs::create_directory(TempPath);
 			}
-			auto Out = new CoreConnection{*this, Host, Port, Socket, EVLoop};
+			auto Out = new CoreConnection{*this, Host, Port, Watcher, ReadCallback};
 			for (auto Item : Library)
 				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size, Item.second.DefaultTitle);
 			return Out;

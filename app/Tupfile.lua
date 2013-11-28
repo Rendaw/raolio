@@ -1,6 +1,6 @@
 DoOnce 'app/translation/Tupfile.lua'
 
-local LinkFlags = ' -lev'
+local LinkFlags = ' -luv'
 if tup.getconfig 'PLATFORM' ~= 'windows'
 then
 	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_regex'

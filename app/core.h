@@ -79,7 +79,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 		uint64_t Chunk;
 	} Response;
 
-	CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, int Socket, struct ev_loop *EVLoop);
+	CoreConnection(Core &Parent, std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(CoreConnection &Socket)> const &ReadCallback);
 
 	bool IdleWrite(void);
 
