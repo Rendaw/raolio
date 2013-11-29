@@ -32,9 +32,13 @@ local ExtraQt5Libraries = Item()
 local ExtraQt5PlatformLibraries = Item()
 local ExtraBoostLicenses = Item()
 local ExtraVLCLicenses = Item()
+local ExtraVLCPluginLibrariesDemux = Item()
+local ExtraVLCPluginLibrariesAudioMixer = Item()
+local ExtraVLCPluginLibrariesAudioOutput = Item()
+local ExtraVLCPluginLibrariesCodec = Item()
 local ExtraQt5Licenses = Item()
 local ExtraGettextLicenses = Item()
-local ExtraLibEVLicenses = Item()
+local ExtraLibUVLicenses = Item()
 if tup.getconfig 'PLATFORM' == 'windows'
 then
 	local WindowsIcon = Define.Raw
@@ -71,9 +75,13 @@ then
 	ExtraQt5PlatformLibraries = AddExtras(ExtraQt5PlatformLibraries, 'WINDOWSQT5PLATFORMDLLS')
 	ExtraBoostLicenses = AddExtras(ExtraBoostLicenses, 'WINDOWSBOOSTLICENSES')
 	ExtraVLCLicenses = AddExtras(ExtraVLCLicenses, 'WINDOWSVLCLICENSES')
+	ExtraVLCPluginLibrariesDemux = AddExtras(ExtraVLCPluginLibrariesDemux, 'WINDOWSVLCPLUGINDLLS_DEMUX')
+	ExtraVLCPluginLibrariesAudioMixer = AddExtras(ExtraVLCPluginLibrariesAudioMixer, 'WINDOWSVLCPLUGINDLLS_AUDIOMIXER')
+	ExtraVLCPluginLibrariesAudioOutput = AddExtras(ExtraVLCPluginLibrariesAudioOutput, 'WINDOWSVLCPLUGINDLLS_AUDIOOUTPUT')
+	ExtraVLCPluginLibrariesCodec = AddExtras(ExtraVLCPluginLibrariesCodec, 'WINDOWSVLCPLUGINDLLS_CODEC')
 	ExtraQt5Licenses = AddExtras(ExtraQt5Licenses, 'WINDOWSQT5LICENSES')
 	ExtraGettextLicenses = AddExtras(ExtraGettextLicenses, 'WINDOWSGETTEXTLICENSES')
-	ExtraLibEVLicenses = AddExtras(ExtraLibEVLicenses, 'WINDOWSLIBEVLICENSES')
+	ExtraLibUVLicenses = AddExtras(ExtraLibUVLicenses, 'WINDOWSLIBUVLICENSES')
 end
 
 local PackageDependencies =
@@ -119,7 +127,11 @@ then
 		Licenses = Item('../license-raolio.txt'),
 		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
 		ExtraQt5PlatformLibraries = ExtraQt5PlatformLibraries,
-		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibEVLicenses
+		ExtraVLCPluginLibrariesDemux = ExtraVLCPluginLibrariesDemux,
+		ExtraVLCPluginLibrariesAudioMixer = ExtraVLCPluginLibrariesAudioMixer,
+		ExtraVLCPluginLibrariesAudioOutput = ExtraVLCPluginLibrariesAudioOutput,
+		ExtraVLCPluginLibrariesCodec = ExtraVLCPluginLibrariesCodec,
+		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibUVLicenses
 	}
 end
 
@@ -150,7 +162,7 @@ then
 		DebianSection = 'sound',
 		Licenses = Item '../license-raolio.txt',
 		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries,
-		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraGettextLicenses + ExtraLibEVLicenses
+		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraGettextLicenses + ExtraLibUVLicenses
 	}
 end
 
