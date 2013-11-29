@@ -117,7 +117,7 @@ bool CoreConnection::IdleWrite(void)
 		{
 			Data.resize(static_cast<size_t>(Read));
 			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
-			//if (Parent.LogCallback) Parent.LogCallback(Core::Debug, String() << "Sent " << FormatHash(Response.ID) << " chunk " << Response.Chunk << " " << (Response.Chunk * ChunkSize) << " - " << (Response.Chunk * ChunkSize + Data.size() - 1) << " (" << Data.size() << ")");
+			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Sent ^0 chunk ^1 ^2 - ^3 (^4)", FormatHash(Response.ID), Response.Chunk, Response.Chunk * ChunkSize, Response.Chunk * ChunkSize + Data.size() - 1, Data.size()));
 			Assert((Read == ChunkSize) || (Response.File.eof()));
 			++Response.Chunk;
 			if (!Response.File.eof()) return true;
@@ -143,16 +143,20 @@ void CoreConnection::HandleTimer(uint64_t const &Now)
 			++Request.Attempts;
 		}
 	}
+
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Ran timer event."));
 }
 
 void CoreConnection::Handle(NP1V1Clock, uint64_t const &InstanceID, uint64_t const &SystemTime)
 {
 	Parent.Net.Forward(NP1V1Clock{}, *this, InstanceID, SystemTime);
 	if (Parent.ClockCallback) Parent.ClockCallback(InstanceID, SystemTime);
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved clock."));
 }
 
 void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string const &Extension, uint64_t const &Size, std::string const &DefaultTitle)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved prepare."));
 	auto Found = Parent.Library.find(MediaID);
 	if (Found != Parent.Library.end()) return;
 	if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Preparing ^0 size ^1", FormatHash(MediaID), Size));
@@ -164,14 +168,25 @@ void CoreConnection::Handle(NP1V1Prepare, HashT const &MediaID, std::string cons
 
 void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &From)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved request."));
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
 	if (!Response.File.is_open() || (MediaID != Response.ID))
 	{
 		if (Response.File.is_open()) Response.File.close();
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opening '^0'", Out->second.Path.string()));
 		Response.File.open(Out->second.Path, std::fstream::in);
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opened '^0'", Out->second.Path.string()));
+		Assert(Response.File.is_open());
+		Assert(!Response.File.eof());
+		Assert(!Response.File.fail());
+		Assert(!Response.File.bad());
 	}
-	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize));
+	Assert(Response.File.is_open());
+	Assert(!Response.File.eof());
+	Assert(!Response.File.fail());
+	Assert(!Response.File.bad());
+	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize), std::ios::beg);
 	Assert(Response.File.tellg(), static_cast<std::streamsize>(From * ChunkSize));
 	Response.ID = MediaID;
 	Response.Chunk = From;
@@ -180,6 +195,7 @@ void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &
 
 void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chunk, std::vector<uint8_t> const &Bytes)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved ^0 chunk ^1 ^2 - ^3 (^4)", FormatHash(MediaID), Chunk, Chunk * ChunkSize, Chunk * ChunkSize + Bytes.size() - 1, Bytes.size()));
 	if (MediaID != Request.ID) return;
 	if (Chunk != Request.Pieces.Next()) return;
 	Assert(Request.File);
@@ -201,6 +217,7 @@ void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chu
 
 void CoreConnection::Handle(NP1V1Remove, HashT const &MediaID)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved remove."));
 	Parent.Net.Forward(NP1V1Remove{}, *this, MediaID);
 	if (Parent.RemoveCallback) Parent.RemoveCallback(MediaID);
 	Parent.RemoveInternal(MediaID);
@@ -208,6 +225,7 @@ void CoreConnection::Handle(NP1V1Remove, HashT const &MediaID)
 
 void CoreConnection::Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &MediaTime, uint64_t const &SystemTime)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved play."));
 	Parent.Net.Forward(NP1V1Play{}, *this, MediaID, MediaTime, SystemTime);
 	Parent.Last.Playing = true;
 	Parent.Last.MediaID = MediaID;
@@ -219,6 +237,7 @@ void CoreConnection::Handle(NP1V1Play, HashT const &MediaID, MediaTimeT const &M
 
 void CoreConnection::Handle(NP1V1Stop)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved stop."));
 	Parent.Net.Forward(NP1V1Stop{}, *this);
 	Parent.Last.Playing = false;
 	if (Parent.StopCallback) Parent.StopCallback();
@@ -226,6 +245,7 @@ void CoreConnection::Handle(NP1V1Stop)
 
 void CoreConnection::Handle(NP1V1Chat, std::string const &Message)
 {
+	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved chat."));
 	Parent.Net.Forward(NP1V1Chat{}, *this, Message);
 	if (Parent.ChatCallback) Parent.ChatCallback(Message);
 }
@@ -314,13 +334,13 @@ Core::Core(bool PruneOldItems) :
 			auto Out = new CoreConnection{*this, Host, Port, Watcher, ReadCallback};
 			for (auto Item : Library)
 				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size, Item.second.DefaultTitle);
+			Out->WakeIdleWrite();
 			return Out;
 		},
 		10.0f
 	}
 {
-	Net.LogCallback = [&](std::string const &Message)
-		{ if (LogCallback) LogCallback(Important, Local("Network: ^0", Message)); };
+	Net.LogCallback = [&](std::string const &Message) { if (LogCallback) LogCallback(Important, Local("Network: ^0", Message)); };
 	bfs::create_directory(TempPath);
 }
 

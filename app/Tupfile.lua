@@ -77,7 +77,7 @@ then
 end
 
 local PackageDependencies =
-	(tup.getconfig 'PLATFORM' == 'arch64' and "'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libev>=4.15-1'" or '') ..
+	(tup.getconfig 'PLATFORM' == 'arch64' and "'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libuv-git>=20120905-1'" or '') ..
 	(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libboost-all-dev (>= 1.53.0-0), libev4 (>= 1.4.11-1)' or '')
 
 if tup.getconfig 'BUILDGUI' ~= 'false'

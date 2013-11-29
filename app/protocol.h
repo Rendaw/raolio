@@ -239,25 +239,32 @@ struct ReaderTupleElement
 	}
 };
 
+enum ReadResult
+{
+	Stop,
+	Continue,
+	Error
+};
+
 template <typename ...MessageTypes> struct Reader : ReaderTupleElement<0, 0, void, MessageTypes...>
 {
 	// StreamType must have SubVector<uint8_t> const &Read(size_t Length, size_t Offset = 0) and void Consume(size_t) methods.
-	template <typename StreamType, typename HandlerType, typename... ExtraTypes> bool Read(StreamType &&Stream, HandlerType &Handler, ExtraTypes const ...ExtraArguments)
+	template <typename StreamType, typename HandlerType, typename... ExtraTypes> ReadResult Read(StreamType &&Stream, HandlerType &Handler, ExtraTypes const ...ExtraArguments)
 	{
 		auto Header = Stream.Read(StrictCast(HeaderSize, size_t));
-		if (!Header) return true;
+		if (!Header) return Continue;
 		VersionIDT const VersionID = *reinterpret_cast<VersionIDT *>(&Header[0]);
 		MessageIDT const MessageID = *reinterpret_cast<MessageIDT *>(&Header[VersionIDT::Size]);
 		SizeT const DataSize = *reinterpret_cast<SizeT *>(&Header[VersionIDT::Size + MessageIDT::Size]);
 
 		auto Body = Stream.Read(StrictCast(DataSize, size_t), StrictCast(HeaderSize, size_t));
-		if ((DataSize > SizeT(0)) && !Body) return true;
+		if ((DataSize > SizeT(0)) && !Body) return Continue;
 
 		bool Out = HeadElement::Read(Handler, VersionID, MessageID, Body, ExtraArguments...);
 
 		Stream.Consume(StrictCast(HeaderSize + DataSize, size_t));
 
-		return Out;
+		return Out ? Stop : Error;
 	}
 
 	private:

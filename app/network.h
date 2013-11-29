@@ -5,18 +5,11 @@
 #include "type.h"
 #include "translation/translation.h"
 
-/*#if defined(WINDOWS)
-#include <winsock2.h>
-typedef int socklen_t;
-#else // WINDOWS
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#endif // WINDOWS*/
 #include <unistd.h>
-#include <uv.h>
+extern "C"
+{
+	#include <uv.h>
+}
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -51,7 +44,7 @@ template <typename ConnectionType> struct Network
 	struct Connection
 	{
 		Connection(std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(ConnectionType &Socket)> const &ReadCallback, ConnectionType &DerivedThis) :
-			Dead{false}, Host{Host}, Port{Port}, ReadBuffer{*this}, ReadCallback{ReadCallback}, Watcher{Watcher}, This(DerivedThis), WriteCounter(0)
+			Dead{false}, HasIdleData{false}, Host{Host}, Port{Port}, Watcher{Watcher}, ReadBuffer{*this}, ReadCallback{ReadCallback}, This(DerivedThis), WriteCounter(0)
 		{
 			assert(Watcher);
 			Watcher->data = &DerivedThis;
@@ -82,7 +75,7 @@ template <typename ConnectionType> struct Network
 		bool IsDead(void) { return Dead; }
 		uint64_t GetDiedAt(void) { assert(Dead); return DiedAt; }
 
-		void WakeIdleWrite(void) { if (Dead) return; This.IdleWrite(); }
+		void WakeIdleWrite(void) { if (Dead) return; if (HasIdleData) return; HasIdleData = true; HasIdleData = This.IdleWrite(); }
 
 		void RawSend(std::vector<uint8_t> const &Data)
 		{
@@ -105,7 +98,7 @@ template <typename ConnectionType> struct Network
 				{
 					std::unique_ptr<WriteRequestInfo> Info(static_cast<WriteRequestInfo *>(Request));
 					if (Error) { Info->This.Die(); return; }
-					if (Info->WriteID == Info->This.WriteCounter) Info->This.IdleWrite();
+					if ((Info->WriteID == Info->This.WriteCounter) && Info->This.HasIdleData) Info->This.HasIdleData = Info->This.IdleWrite();
 				}
 			);
 			if (Error) Die();
@@ -135,6 +128,7 @@ template <typename ConnectionType> struct Network
 
 			bool Dead;
 			uint64_t DiedAt;
+			bool HasIdleData;
 
 			std::string Host;
 			uint16_t Port;
@@ -195,11 +189,11 @@ template <typename ConnectionType> struct Network
 			uv_tcp_init(uv_default_loop(), Watcher);
 			int Error;
 			struct sockaddr_in Address;
-			if (Error = uv_ip4_addr(Host.c_str(), Port, &Address))
+			if ((Error = uv_ip4_addr(Host.c_str(), Port, &Address)))
 				throw ConstructionError() << Local("Invalid address (^0:^1)", Host, Port);
-			if (Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address)))
+			if ((Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address))))
 				throw ConstructionError() << Local("Failed to bind (^0:^1): ^2", Host, Port, uv_strerror(Error));
-			if (Error = uv_listen(reinterpret_cast<uv_stream_t *>(Watcher), 2, [](uv_stream_t *Data, int Error) { assert(Error = 0); UVData<uv_tcp_t>::Fix(Data); }))
+			if ((Error = uv_listen(reinterpret_cast<uv_stream_t *>(Watcher), 2, [](uv_stream_t *Data, int Error) { assert(Error == 0); UVData<uv_tcp_t>::Fix(Data); })))
 				throw ConstructionError() << Local("Failed to listen on (^0:^1): ^2", Host, Port, uv_strerror(Error));
 		}
 
@@ -332,11 +326,15 @@ template <typename ConnectionType> struct Network
 
 			auto const ReadCallback = [&](ConnectionType &Socket)
 			{
-				bool Result = Reader.Read(Socket.ReadBuffer, Socket);
-				if (!Result)
+				Protocol::ReadResult Result;
+				do
 				{
-					std::cout << "::REND:: failed to read." << std::endl;
-				}
+					Result = Reader.Read(Socket.ReadBuffer, Socket);
+					if (Result == Protocol::Error)
+					{
+						std::cout << "::REND:: failed to read." << std::endl;
+					}
+				} while (Result == Protocol::Stop);
 			};
 
 			auto const CleanConnections = [&](void)
@@ -385,7 +383,7 @@ template <typename ConnectionType> struct Network
 
 							uv_accept(reinterpret_cast<uv_stream_t *>(Socket->Watcher), reinterpret_cast<uv_stream_t *>(Watcher));
 
-							auto *ConnectionInfo = CreateConnection("@" + Socket->Host, Socket->Port, Watcher, ReadCallback);
+							auto *ConnectionInfo = CreateConnection(Socket->Host, Socket->Port, Watcher, ReadCallback);
 
 							std::lock_guard<std::mutex> Lock(This->Mutex);
 							This->Connections.push_back(std::unique_ptr<ConnectionType>{ConnectionInfo});
@@ -394,15 +392,19 @@ template <typename ConnectionType> struct Network
 					else
 					{
 						using AddressRequestInfo = UVData<uv_getaddrinfo_t, int, struct addrinfo *>;
+						auto HostString = new std::string(Directive.Host);
+						auto PortString = new std::string(String() << Directive.Port);
 						auto AddressRequest = new AddressRequestInfo { [=, &This](AddressRequestInfo *Info, int Error, struct addrinfo *AddressInfo)
 						{
 							auto Free1 = std::unique_ptr<AddressRequestInfo>(Info);
 							auto Free2 = std::unique_ptr<struct addrinfo, decltype(&uv_freeaddrinfo)>(AddressInfo, &uv_freeaddrinfo);
+							auto Free3 = std::unique_ptr<std::string>(PortString);
+							auto Free4 = std::unique_ptr<std::string>(HostString);
 
 							if (Error)
 							{
 								if (This->LogCallback)
-									This->LogCallback(Local("Failed to look up host ^0:^1", Directive.Host, Directive.Port));
+									This->LogCallback(Local("Failed to look up host ^0: ^1", Directive.Host, uv_strerror(Error)));
 								return;
 							}
 
@@ -417,7 +419,7 @@ template <typename ConnectionType> struct Network
 								{
 									uv_close(reinterpret_cast<uv_handle_t *>(Watcher), [](uv_handle_t *Watcher) { delete reinterpret_cast<uv_tcp_t *>(Watcher); });
 									if (This->LogCallback)
-										This->LogCallback(Local("Failed to connect to ^0:^1", Directive.Host, Directive.Port));
+										This->LogCallback(Local("Failed to connect to (^0:^1): ^2", Directive.Host, Directive.Port, uv_strerror(Error)));
 									return;
 								}
 
@@ -427,14 +429,14 @@ template <typename ConnectionType> struct Network
 								CleanConnections();
 								This->Connections.emplace_back(Socket);
 							}};
-							uv_tcp_connect(ConnectRequest, Watcher, reinterpret_cast<struct sockaddr *>(AddressInfo->ai_addr),
+							uv_tcp_connect(ConnectRequest, Watcher, AddressInfo->ai_addr,
 								[](uv_connect_t *Info, int Error)
 									{ ConnectRequestInfo::Fix(static_cast<ConnectRequestInfo *>(Info), Error); });
 						}};
 						uv_getaddrinfo(uv_default_loop(), AddressRequest,
 							[](uv_getaddrinfo_t *Info, int Error, struct addrinfo *AddressInfo)
 								{ AddressRequestInfo::Fix(static_cast<AddressRequestInfo *>(Info), Error, AddressInfo); },
-							Directive.Host.c_str(), nullptr, nullptr);
+							HostString->c_str(), PortString->c_str(), nullptr);
 					}
 				}
 			});
@@ -490,7 +492,7 @@ template <typename ConnectionType> struct Network
 					});
 					uv_timer_init(uv_default_loop(), TimerData);
 					TimerCallbacks.emplace_back(TimerData, TimerCallbackFree);
-					uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, Directive.Seconds, 0);
+					uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, Directive.Seconds * 1000, 0);
 				}
 			});
 			uv_async_init(uv_default_loop(), AsyncScheduleData, UVWatcherData<uv_async_t>::PreCallback);
@@ -506,7 +508,7 @@ template <typename ConnectionType> struct Network
 				});
 				uv_timer_init(uv_default_loop(), TimerData);
 				TimerCallbacks.emplace_back(TimerData, TimerCallbackFree);
-				uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, *TimerPeriod, *TimerPeriod);
+				uv_timer_start(TimerData, UVWatcherData<uv_timer_t>::PreCallback, *TimerPeriod * 1000, *TimerPeriod * 1000);
 			}
 
 			This->InitSignal.notify_all();
