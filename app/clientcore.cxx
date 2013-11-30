@@ -2,6 +2,9 @@
 
 #include "error.h"
 
+#include <fcntl.h>
+#include <taglib/fileref.h>
+
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
@@ -16,30 +19,15 @@ EngineWrapper::~EngineWrapper(void)
 	libvlc_release(VLC);
 }
 
-static std::string ExtractMeta(libvlc_media_t *Media, libvlc_meta_t const &MetaID, std::string const &Default = {})
+Optional<MediaInfo> SummarizeFile(bfs::path const &Path)
 {
-	auto Out = libvlc_media_get_meta(Media, MetaID);
-	if (!Out) return Default;
-	return Out;
+	MediaInfo Out;
+	auto Hash = HashFile(Path);
+	if (!Hash) return {};
+	TagLib::FileRef(Path.string()
 }
 
-static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
-{
-	String TrackExtractor(ExtractMeta(Media, libvlc_meta_TrackNumber));
-	int16_t Track = -1;
-	TrackExtractor >> Track;
-	if (Track >= 0) Out.Track = Track;
-	else Out.Track = {};
-	Out.Artist = ExtractMeta(Media, libvlc_meta_Artist, Out.Artist);
-	Out.Album = ExtractMeta(Media, libvlc_meta_Album, Out.Album);
-	Out.Title = ExtractMeta(Media, libvlc_meta_Title, Out.Title);
-}
-
-MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
-
-MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
-
-ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Playing{nullptr}, LastPosition{0}
+ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Playing{nullptr}, PlayingFD{}, PlayingMedia{nullptr}, LastPosition{0}
 {
 	libvlc_event_attach(libvlc_media_player_event_manager(Engine.VLCMediaPlayer), libvlc_MediaPlayerEndReached, VLCMediaEndCallback, this);
 	libvlc_audio_set_volume(Engine.VLCMediaPlayer, static_cast<int>(Volume * 100));
@@ -64,6 +52,11 @@ ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Play
 		{ auto const Now = GetNow(); PlayInternal(MediaID, MediaTime, SystemTime, Now); };
 	Parent.StopCallback = [this](void)
 		{ StopInternal(); };
+}
+
+ClientCore::~ClientCore(void)
+{
+	if (PlayingMedia) libvlc_media_release(PlayingMedia);
 }
 
 void ClientCore::Open(bool Listen, std::string const &Host, uint16_t Port)
@@ -105,7 +98,7 @@ void ClientCore::GetTime(void)
 	{
 		if (SeekCallback)
 		{
-			float Duration = Playing ? libvlc_media_get_duration(Playing->VLCMedia) / 1000.0f : 0.0f;
+			float Duration = Playing ? libvlc_media_get_duration(PlayingMedia) / 1000.0f : 0.0f;
 			SeekCallback(GetTimeInternal(), Duration);
 		}
 	});
@@ -120,8 +113,9 @@ void ClientCore::Play(HashT const &MediaID, float Position)
 	{
 		auto Media = MediaLookup.find(MediaID);
 		if (Media == MediaLookup.end()) return;
-		MediaTimeT TotalLength{libvlc_media_get_duration(Media->second->VLCMedia)};
-		LocalPlayInternal(MediaID, MediaTimeT(Position * StrictCast(TotalLength, float)));
+		//MediaTimeT TotalLength{Media->second->Lengthlibvlc_media_get_duration(Media->second->Length)};
+		//LocalPlayInternal(MediaID, MediaTimeT(Position * StrictCast(Media->second->Length, float)));
+		LocalPlayInternal(MediaID, MediaTimeT(0));
 		LastPosition = MediaTimePercentT{Position};
 	});
 }
@@ -154,24 +148,17 @@ struct VLCParsedUserData
 void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle)
 {
 	if (MediaLookup.find(Hash) != MediaLookup.end()) return;
-	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename.string().c_str());
-	if (!VLCMedia)
+
+	auto Item = new MediaInfo{Hash, Filename, {}, {}, {}, DefaultTitle};
+	MediaLookup[Hash] = std::unique_ptr<MediaInfo>(Item);
+
+	/*int FD = open(Filename.string().c_str(), O_RDONLY);
+	if (FD == -1)
 	{
-		if (LogCallback) LogCallback(Local("Failed to open selected media, ^0; Removing from playlist.", Filename));
-		// TODO remove from playlist
+		if (LogCallback) LogCallback(Local("Failed to open selected media with libvlc, ^0; removing from playlist", Filename));
 		return;
 	}
-
-	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, DefaultTitle, VLCMedia};
-	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
-
-	if (libvlc_media_is_parsed(VLCMedia))
-		ExtractAllMeta(*Item, VLCMedia);
-	else
-	{
-		libvlc_event_attach(libvlc_media_event_manager(VLCMedia), libvlc_MediaParsedChanged, VLCMediaParsedCallback, new VLCParsedUserData{*this, Hash});
-		libvlc_media_parse_async(VLCMedia);
-	}
+	MediaTimeT TotalLength{Media->second->Lengthlibvlc_media_get_duration(Media->second->Length)};*/
 
 	if (AddCallback) AddCallback(*Item);
 
@@ -208,7 +195,40 @@ void ClientCore::PlayInternal(HashT const &MediaID, MediaTimeT Position, uint64_
 {
 	auto Media = MediaLookup.find(MediaID);
 	if (Media == MediaLookup.end()) return;
-	libvlc_media_player_set_media(Engine.VLCMediaPlayer, Media->second->VLCMedia);
+	if (PlayingFD)
+	{
+		if (MediaID != Playing->Hash)
+		{
+			assert(PlayingMedia);
+			libvlc_media_release(PlayingMedia);
+			close(*PlayingFD);
+			PlayingFD = {};
+		}
+		else
+		{
+			lseek(*PlayingFD, 0, SEEK_SET);
+		}
+	}
+	if (!PlayingFD)
+	{
+		assert(!PlayingMedia);
+		PlayingFD = open(Media->second->Filename.string().c_str(), O_RDONLY);
+		if (*PlayingFD == -1)
+		{
+			PlayingFD = {};
+			if (LogCallback) LogCallback(Local("Failed to open selected media, ^0.", Media->second->Filename));
+			return;
+		}
+		PlayingMedia = libvlc_media_new_fd(Engine.VLC, *PlayingFD);
+		if (!PlayingMedia)
+		{
+			close(*PlayingFD);
+			if (LogCallback) LogCallback(Local("Failed to open selected media with libvlc, ^0.", Media->second->Filename));
+			return;
+		}
+	}
+
+	libvlc_media_player_set_media(Engine.VLCMediaPlayer, PlayingMedia);
 	float StartTime = StrictCast(Position, float) / libvlc_media_player_get_length(Engine.VLCMediaPlayer);
 	if (SelectCallback) SelectCallback(MediaID);
 	if (Now >= SystemTime)
@@ -247,19 +267,6 @@ void ClientCore::VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData
 {
 	auto This = static_cast<ClientCore *>(UserData);
 	if (This->EndCallback) This->EndCallback();
-}
-
-void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData)
-{
-	auto Data = static_cast<VLCParsedUserData *>(UserData);
-	Data->Core.CallTransfer([Data](void)
-	{
-		auto Media = Data->Core.MediaLookup.find(Data->Hash);
-		if (Media == Data->Core.MediaLookup.end()) return;
-		ExtractAllMeta(*Media->second, Media->second->VLCMedia);
-		if (Data->Core.UpdateCallback) Data->Core.UpdateCallback(*Media->second.get());
-		delete Data;
-	});
 }
 
 PlaylistType::PlaylistInfo::PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}

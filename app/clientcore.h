@@ -49,22 +49,18 @@ struct MediaInfo
 	Optional<uint16_t> Track;
 	std::string Artist;
 	std::string Album;
+	std::string DiscNumber;
 	std::string Title;
 };
 
-struct MediaItem : MediaInfo
-{
-	libvlc_media_t *VLCMedia;
-
-	MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
-	~MediaItem(void);
-};
+MediaInfo SummarizeFile(bfs::path const &Path);
 
 struct ClientCore
 {
 	ClientCore(ClientCore const &Other) = delete;
 	ClientCore(ClientCore &&Other) = delete;
 	ClientCore(float Volume);
+	~ClientCore(void);
 
 	std::function<void(std::string const &Message)> LogCallback;
 	std::function<void(float Percent, float Duration)> SeekCallback;
@@ -105,15 +101,16 @@ struct ClientCore
 		bool IsPlayingInternal(void);
 
 		static void VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData);
-		static void VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData);
 
 		CallTransferType &CallTransfer; // Makes a call in the core's main thread
 
 		Core Parent;
 
 		EngineWrapper Engine;
-		std::map<HashT, std::unique_ptr<MediaItem>> MediaLookup;
-		MediaItem *Playing;
+		std::map<HashT, std::unique_ptr<MediaInfo>> MediaLookup;
+		MediaInfo *Playing;
+		Optional<int> PlayingFD;
+		libvlc_media_t *PlayingMedia;
 		MediaTimePercentT LastPosition;
 
 		LatencyTracker Latencies;
