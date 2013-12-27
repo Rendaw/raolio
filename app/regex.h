@@ -30,7 +30,12 @@ template <typename EnumerationType> struct Enumeration : std::map<std::string, E
 
 template <typename ...CaptureTypes> struct Parser
 {
-	Parser(char const *Pattern) : Expression{Pattern} { Assert(hack_mark_count(Expression), sizeof...(CaptureTypes)); }
+	Parser(char const *Pattern)
+	{
+		Expression.imbue(std::locale());
+		Expression.assign(Pattern);
+		Assert(hack_mark_count(Expression), sizeof...(CaptureTypes));
+	}
 
 	template <typename... OutputTypes>
 	bool operator()(std::string Input, OutputTypes &...Outputs)

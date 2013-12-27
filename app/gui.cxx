@@ -934,7 +934,13 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				for (auto File : Selected)
 				{
 					auto Hash = HashFile(File.toUtf8().data());
-					if (!Hash) continue; // TODO Warn?
+					if (!Hash)
+					{
+#ifndef NDEBUG
+						std::cout << "Failed to hash filename: '" << File.toUtf8().data() << "'" << std::endl;
+#endif
+						continue;
+					}
 					Core->Add(Hash->first, Hash->second, File.toUtf8().data());
 				}
 				*AlreadySelected = true;

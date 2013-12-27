@@ -2,12 +2,24 @@
 
 #include "error.h"
 
+#include <boost/locale.hpp>
+#include <boost/regex.hpp>
+
+static struct SetBoostLocaleStatic
+{
+	SetBoostLocaleStatic(void)
+	{
+		std::locale::global(boost::locale::generator().generate(""));
+		boost::filesystem::path::imbue(std::locale());
+	}
+} SetBoostLocale;
+
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
-	if (!VLC) throw ConstructionError() << Local("Could not initialize libVLC.");
+	if (!VLC) throw ConstructionError() << Local("Could not initialize libVLC: ^0", libvlc_errmsg());
 	VLCMediaPlayer = libvlc_media_player_new(VLC);
-	if (!VLCMediaPlayer) throw ConstructionError() << Local("Could not initialice libVLC media player.");
+	if (!VLCMediaPlayer) throw ConstructionError() << Local("Could not initialice libVLC media player: ^0", libvlc_errmsg());
 }
 
 EngineWrapper::~EngineWrapper(void)
@@ -157,8 +169,7 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::
 	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename.string().c_str());
 	if (!VLCMedia)
 	{
-		if (LogCallback) LogCallback(Local("Failed to open selected media, ^0; Removing from playlist.", Filename));
-		// TODO remove from playlist
+		if (LogCallback) LogCallback(Local("Failed to open selected media, ^0: ^1", Filename, libvlc_errmsg()));
 		return;
 	}
 

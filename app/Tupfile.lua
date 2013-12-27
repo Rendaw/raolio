@@ -3,9 +3,9 @@ DoOnce 'app/translation/Tupfile.lua'
 local LinkFlags = ' -luv'
 if tup.getconfig 'PLATFORM' ~= 'windows'
 then
-	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_regex'
+	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_regex -lboost_locale'
 else
-	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_regex-mt -lintl -lws2_32'
+	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_regex-mt -lboost_locale-mt -lintl -lws2_32'
 end
 
 local SharedObjects = Define.Objects
@@ -32,8 +32,10 @@ local ExtraQt5Libraries = Item()
 local ExtraQt5PlatformLibraries = Item()
 local ExtraBoostLicenses = Item()
 local ExtraVLCLicenses = Item()
+local ExtraVLCPluginLibrariesAccess = Item()
 local ExtraVLCPluginLibrariesDemux = Item()
 local ExtraVLCPluginLibrariesAudioMixer = Item()
+local ExtraVLCPluginLibrariesAudioFilter = Item()
 local ExtraVLCPluginLibrariesAudioOutput = Item()
 local ExtraVLCPluginLibrariesCodec = Item()
 local ExtraQt5Licenses = Item()
@@ -75,8 +77,10 @@ then
 	ExtraQt5PlatformLibraries = AddExtras(ExtraQt5PlatformLibraries, 'WINDOWSQT5PLATFORMDLLS')
 	ExtraBoostLicenses = AddExtras(ExtraBoostLicenses, 'WINDOWSBOOSTLICENSES')
 	ExtraVLCLicenses = AddExtras(ExtraVLCLicenses, 'WINDOWSVLCLICENSES')
+	ExtraVLCPluginLibrariesAccess = AddExtras(ExtraVLCPluginLibrariesAccess, 'WINDOWSVLCPLUGINDLLS_ACCESS')
 	ExtraVLCPluginLibrariesDemux = AddExtras(ExtraVLCPluginLibrariesDemux, 'WINDOWSVLCPLUGINDLLS_DEMUX')
 	ExtraVLCPluginLibrariesAudioMixer = AddExtras(ExtraVLCPluginLibrariesAudioMixer, 'WINDOWSVLCPLUGINDLLS_AUDIOMIXER')
+ 	ExtraVLCPluginLibrariesAudioFilter = AddExtras(ExtraVLCPluginLibrariesAudioFilter, 'WINDOWSVLCPLUGINDLLS_AUDIOFILTER')
 	ExtraVLCPluginLibrariesAudioOutput = AddExtras(ExtraVLCPluginLibrariesAudioOutput, 'WINDOWSVLCPLUGINDLLS_AUDIOOUTPUT')
 	ExtraVLCPluginLibrariesCodec = AddExtras(ExtraVLCPluginLibrariesCodec, 'WINDOWSVLCPLUGINDLLS_CODEC')
 	ExtraQt5Licenses = AddExtras(ExtraQt5Licenses, 'WINDOWSQT5LICENSES')
@@ -127,8 +131,10 @@ then
 		Licenses = Item('../license-raolio.txt'),
 		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
 		ExtraQt5PlatformLibraries = ExtraQt5PlatformLibraries,
+		ExtraVLCPluginLibrariesAccess = ExtraVLCPluginLibrariesAccess,
 		ExtraVLCPluginLibrariesDemux = ExtraVLCPluginLibrariesDemux,
 		ExtraVLCPluginLibrariesAudioMixer = ExtraVLCPluginLibrariesAudioMixer,
+		ExtraVLCPluginLibrariesAudioFilter = ExtraVLCPluginLibrariesAudioFilter,
 		ExtraVLCPluginLibrariesAudioOutput = ExtraVLCPluginLibrariesAudioOutput,
 		ExtraVLCPluginLibrariesCodec = ExtraVLCPluginLibrariesCodec,
 		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibUVLicenses
