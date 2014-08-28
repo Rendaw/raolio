@@ -12,8 +12,8 @@ typedef std::array<uint8_t, 16> HashT;
 
 std::string FormatHash(HashT const &Hash);
 
-Optional<HashT> UnformatHash(char const *String);
+OptionalT<HashT> UnformatHash(char const *String);
 
-Optional<std::pair<HashT, size_t>> HashFile(bfs::path const &Path);
+OptionalT<std::pair<HashT, size_t>> HashFile(bfs::path const &Path);
 
 #endif

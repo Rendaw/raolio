@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 	{
 		Host = argv[1];
 		if ((argc >= 3) && (argv[2][0] != '-'))
-			String(argv[2]) >> Port;
+			StringT(argv[2]) >> Port;
 	}
 
 	Core Core{true};

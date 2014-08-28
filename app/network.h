@@ -190,11 +190,11 @@ template <typename ConnectionType> struct Network
 			int Error;
 			struct sockaddr_in Address;
 			if ((Error = uv_ip4_addr(Host.c_str(), Port, &Address)))
-				throw ConstructionError() << Local("Invalid address (^0:^1)", Host, Port);
+				throw ConstructionErrorT() << Local("Invalid address (^0:^1)", Host, Port);
 			if ((Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address))))
-				throw ConstructionError() << Local("Failed to bind (^0:^1): ^2", Host, Port, uv_strerror(Error));
+				throw ConstructionErrorT() << Local("Failed to bind (^0:^1): ^2", Host, Port, uv_strerror(Error));
 			if ((Error = uv_listen(reinterpret_cast<uv_stream_t *>(Watcher), 2, [](uv_stream_t *Data, int Error) { assert(Error == 0); UVData<uv_tcp_t>::Fix(Data); })))
-				throw ConstructionError() << Local("Failed to listen on (^0:^1): ^2", Host, Port, uv_strerror(Error));
+				throw ConstructionErrorT() << Local("Failed to listen on (^0:^1): ^2", Host, Port, uv_strerror(Error));
 		}
 
 		~Listener(void) { uv_close(reinterpret_cast<uv_handle_t *>(Watcher), [](uv_handle_t *Watcher) { delete reinterpret_cast<UVData<uv_tcp_t> *>(Watcher); }); }
@@ -204,7 +204,7 @@ template <typename ConnectionType> struct Network
 		UVData<uv_tcp_t> *Watcher;
 	};
 
-	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
+	template <typename ...MessageTypes> Network(std::tuple<MessageTypes...>, CreateConnectionCallback const &CreateConnection, OptionalT<float> TimerPeriod)
 	{
 		std::unique_lock<std::mutex> Lock(Mutex);
 		Thread = std::thread{Network::Run<MessageTypes...>, this, CreateConnection, TimerPeriod};
@@ -268,7 +268,7 @@ template <typename ConnectionType> struct Network
 		}
 	}
 
-	Optional<uint64_t> IdleSince(void)
+	OptionalT<uint64_t> IdleSince(void)
 	{
 		auto Out = DeletedIdleSince;
 		for (auto &Connection : Connections)
@@ -307,11 +307,11 @@ template <typename ConnectionType> struct Network
 		std::queue<ScheduleInfo> ScheduleQueue;
 
 		// Net-thread only
-		Optional<uint64_t> DeletedIdleSince;
+		OptionalT<uint64_t> DeletedIdleSince;
 		std::list<std::unique_ptr<ConnectionType>> Connections;
 
 		// Thread implementation
-		template <typename ...MessageTypes> static void Run(Network *This, CreateConnectionCallback const &CreateConnection, Optional<float> TimerPeriod)
+		template <typename ...MessageTypes> static void Run(Network *This, CreateConnectionCallback const &CreateConnection, OptionalT<float> TimerPeriod)
 		{
 			std::unique_lock<std::mutex> Lock(This->Mutex); // Waiting for init signal wait
 
@@ -372,7 +372,7 @@ template <typename ConnectionType> struct Network
 					{
 						Listener *Socket = nullptr;
 						try { Socket = new Listener{Directive.Host, Directive.Port}; }
-						catch (ConstructionError &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
+						catch (ConstructionErrorT &Error) { if (This->LogCallback) This->LogCallback(Error); continue; }
 						Listeners.emplace_back(Socket);
 						Socket->Watcher->Callback = [&, Socket](UVData<uv_tcp_t> *ListenWatcher)
 						{
@@ -393,7 +393,7 @@ template <typename ConnectionType> struct Network
 					{
 						using AddressRequestInfo = UVData<uv_getaddrinfo_t, int, struct addrinfo *>;
 						auto HostString = new std::string(Directive.Host);
-						auto PortString = new std::string(String() << Directive.Port);
+						auto PortString = new std::string(StringT() << Directive.Port);
 						auto AddressRequest = new AddressRequestInfo { [=, &This](AddressRequestInfo *Info, int Error, struct addrinfo *AddressInfo)
 						{
 							auto Free1 = std::unique_ptr<AddressRequestInfo>(Info);

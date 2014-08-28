@@ -46,7 +46,7 @@ struct MediaInfo
 {
 	HashT Hash;
 	bfs::path Filename;
-	Optional<uint16_t> Track;
+	OptionalT<uint16_t> Track;
 	std::string Artist;
 	std::string Album;
 	std::string Title;
@@ -56,7 +56,7 @@ struct MediaItem : MediaInfo
 {
 	libvlc_media_t *VLCMedia;
 
-	MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
+	MediaItem(HashT const &Hash, bfs::path const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
 	~MediaItem(void);
 };
 
@@ -135,29 +135,29 @@ struct PlaylistType
 	{
 		HashT Hash;
 		PlayState State;
-		Optional<uint16_t> Track;
+		OptionalT<uint16_t> Track;
 		std::string Title;
 		std::string Album;
 		std::string Artist;
-		PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist);
+		PlaylistInfo(HashT const &Hash, decltype(State) const &State, OptionalT<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist);
 		PlaylistInfo(void);
 	};
 	protected:
 		std::vector<PlaylistInfo> Playlist;
-		Optional<size_t> Index;
+		OptionalT<size_t> Index;
 	public:
 
-	Optional<size_t> Find(HashT const &Hash);
+	OptionalT<size_t> Find(HashT const &Hash);
 	void AddUpdate(MediaInfo const &Item);
 	void Remove(HashT const &Hash);
 	bool Select(HashT const &Hash);
-	Optional<bool> IsPlaying(void);
-	Optional<HashT> GetID(size_t Row) const;
-	Optional<HashT> GetCurrentID(void) const;
-	Optional<PlaylistInfo> GetCurrent(void) const;
+	OptionalT<bool> IsPlaying(void);
+	OptionalT<HashT> GetID(size_t Row) const;
+	OptionalT<HashT> GetCurrentID(void) const;
+	OptionalT<PlaylistInfo> GetCurrent(void) const;
 	std::vector<PlaylistInfo> const &GetItems(void) const;
-	Optional<HashT> GetNextID(void) const;
-	Optional<HashT> GetPreviousID(void) const;
+	OptionalT<HashT> GetNextID(void) const;
+	OptionalT<HashT> GetPreviousID(void) const;
 	void Play(void);
 	void Stop(void);
 	void Shuffle(void);

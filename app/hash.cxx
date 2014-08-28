@@ -16,7 +16,7 @@ std::string FormatHash(HashT const &Hash)
 	return Display.str();
 }
 
-Optional<HashT> UnformatHash(char const *String)
+OptionalT<HashT> UnformatHash(char const *String)
 {
 	HashT Hash;
 	for (size_t Position = 0; Position < Hash.size() * 2; Position += 2)
@@ -34,7 +34,7 @@ Optional<HashT> UnformatHash(char const *String)
 	return Hash;
 }
 
-Optional<std::pair<HashT, size_t>> HashFile(bfs::path const &Path)
+OptionalT<std::pair<HashT, size_t>> HashFile(bfs::path const &Path)
 {
 	bfs::ifstream File(Path);
 	if (!File) return {};

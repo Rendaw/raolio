@@ -76,7 +76,7 @@ void FilePieces::Set(uint64_t Index)
 	for (auto Length : Runs) OrigSize += Length;
 	size_t NewSize = 0;
 	for (auto Length : NewRuns) NewSize += Length;
-	Assert(OrigSize, NewSize);
+	AssertE(OrigSize, NewSize);
 #endif
 	Runs.swap(NewRuns);
 }
@@ -110,7 +110,7 @@ bool CoreConnection::IdleWrite(void)
 	if (Response.File.is_open() && !Response.File.eof())
 	{
 		std::vector<uint8_t> Data(ChunkSize);
-		Assert(Response.File.tellg(), Response.Chunk * ChunkSize);
+		AssertE(Response.File.tellg(), Response.Chunk * ChunkSize);
 		Response.File.read((char *)&Data[0], ChunkSize);
 		std::streamsize Read = Response.File.gcount();
 		if (Read > 0)
@@ -187,7 +187,7 @@ void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &
 	Assert(!Response.File.fail());
 	Assert(!Response.File.bad());
 	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize), std::ios::beg);
-	Assert(Response.File.tellg(), static_cast<std::streamsize>(From * ChunkSize));
+	AssertE(Response.File.tellg(), static_cast<std::streamsize>(From * ChunkSize));
 	Response.ID = MediaID;
 	Response.Chunk = From;
 	WakeIdleWrite();
@@ -199,7 +199,7 @@ void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chu
 	if (MediaID != Request.ID) return;
 	if (Chunk != Request.Pieces.Next()) return;
 	Assert(Request.File);
-	Assert(Request.File.tellp(), Chunk * ChunkSize);
+	AssertE(Request.File.tellp(), Chunk * ChunkSize);
 	if ((Bytes.size() != ChunkSize) && (Chunk * ChunkSize + Bytes.size() != Request.Size)) return; // Probably an error condition
 	Request.Pieces.Set(Chunk);
 	Request.File.write((char const *)&Bytes[0], Bytes.size());

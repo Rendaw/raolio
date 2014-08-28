@@ -1,9 +1,8 @@
 #include "clientcore.h"
 
-#include "error.h"
+#include "type.h"
 
 #include <boost/locale.hpp>
-#include <boost/regex.hpp>
 
 static struct SetBoostLocaleStatic
 {
@@ -17,9 +16,9 @@ static struct SetBoostLocaleStatic
 EngineWrapper::EngineWrapper(void)
 {
 	VLC = libvlc_new(0, nullptr);
-	if (!VLC) throw ConstructionError() << Local("Could not initialize libVLC: ^0", libvlc_errmsg());
+	if (!VLC) throw ConstructionErrorT() << Local("Could not initialize libVLC: ^0", libvlc_errmsg());
 	VLCMediaPlayer = libvlc_media_player_new(VLC);
-	if (!VLCMediaPlayer) throw ConstructionError() << Local("Could not initialice libVLC media player: ^0", libvlc_errmsg());
+	if (!VLCMediaPlayer) throw ConstructionErrorT() << Local("Could not initialice libVLC media player: ^0", libvlc_errmsg());
 }
 
 EngineWrapper::~EngineWrapper(void)
@@ -37,7 +36,7 @@ static std::string ExtractMeta(libvlc_media_t *Media, libvlc_meta_t const &MetaI
 
 static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
 {
-	String TrackExtractor(ExtractMeta(Media, libvlc_meta_TrackNumber));
+	StringT TrackExtractor(ExtractMeta(Media, libvlc_meta_TrackNumber));
 	int16_t Track = -1;
 	TrackExtractor >> Track;
 	if (Track >= 0) Out.Track = Track;
@@ -47,7 +46,7 @@ static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
 	Out.Title = ExtractMeta(Media, libvlc_meta_Title, Out.Title);
 }
 
-MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, Optional<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
+MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
 
 MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
@@ -273,10 +272,10 @@ void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserD
 	});
 }
 
-PlaylistType::PlaylistInfo::PlaylistInfo(HashT const &Hash, decltype(State) const &State, Optional<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
+PlaylistType::PlaylistInfo::PlaylistInfo(HashT const &Hash, decltype(State) const &State, OptionalT<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
 PlaylistType::PlaylistInfo::PlaylistInfo(void) {}
 
-Optional<size_t> PlaylistType::Find(HashT const &Hash)
+OptionalT<size_t> PlaylistType::Find(HashT const &Hash)
 {
 	for (size_t Index = 0; Index < Playlist.size(); ++Index) if (Playlist[Index].Hash == Hash) return Index;
 	return {};
@@ -320,25 +319,25 @@ bool PlaylistType::Select(HashT const &Hash)
 	return Out;
 }
 
-Optional<bool> PlaylistType::IsPlaying(void)
+OptionalT<bool> PlaylistType::IsPlaying(void)
 {
 	if (!Index) return {};
 	return Playlist[*Index].State == PlayState::Play;
 }
 
-Optional<HashT> PlaylistType::GetID(size_t Row) const
+OptionalT<HashT> PlaylistType::GetID(size_t Row) const
 {
 	if (Row >= Playlist.size()) return {};
 	return Playlist[Row].Hash;
 }
 
-Optional<HashT> PlaylistType::GetCurrentID(void) const
+OptionalT<HashT> PlaylistType::GetCurrentID(void) const
 {
 	if (!Index) return {};
 	return Playlist[*Index].Hash;
 }
 
-Optional<PlaylistType::PlaylistInfo> PlaylistType::GetCurrent(void) const
+OptionalT<PlaylistType::PlaylistInfo> PlaylistType::GetCurrent(void) const
 {
 	if (!Index) return {};
 	return Playlist[*Index];
@@ -346,7 +345,7 @@ Optional<PlaylistType::PlaylistInfo> PlaylistType::GetCurrent(void) const
 
 std::vector<PlaylistType::PlaylistInfo> const &PlaylistType::GetItems(void) const { return Playlist; }
 
-Optional<HashT> PlaylistType::GetNextID(void) const
+OptionalT<HashT> PlaylistType::GetNextID(void) const
 {
 	if (!Index)
 	{
@@ -361,7 +360,7 @@ Optional<HashT> PlaylistType::GetNextID(void) const
 	}
 }
 
-Optional<HashT> PlaylistType::GetPreviousID(void) const
+OptionalT<HashT> PlaylistType::GetPreviousID(void) const
 {
 	if (!Index)
 	{

@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-	if (argc >= 3) String(argv[2]) >> Port;
+	if (argc >= 3) StringT(argv[2]) >> Port;
 	Core Core{true};
 	Core.LogCallback = [](Core::LogPriority Priority, std::string const &Message)
 	{

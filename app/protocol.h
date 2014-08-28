@@ -13,7 +13,7 @@ Messages are completely redefined for each new version.
 
 #include "constcount.h"
 #include "error.h"
-#include "cast.h"
+#include "type.h"
 
 #include <vector>
 #include <functional>

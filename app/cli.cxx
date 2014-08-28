@@ -77,9 +77,9 @@ class StringSplitter
 		std::vector<std::string> Out;
 };
 
-std::string FormatItem(PlaylistType::PlaylistInfo const &Item, Optional<size_t> Index, bool State, bool Album, bool TrackNumber, bool Artist)
+std::string FormatItem(PlaylistType::PlaylistInfo const &Item, OptionalT<size_t> Index, bool State, bool Album, bool TrackNumber, bool Artist)
 {
-	String Out;
+	StringT Out;
 	if (State) Out << ((Item.State == PlayState::Play) ? "> " :
 		((Item.State == PlayState::Pause) ? "= " :
 		"  "));
@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 		Handle += ": ";
 	}
 	if (argc >= 3) Host = argv[2];
-	if (argc >= 4) String(argv[3]) >> Port;
+	if (argc >= 4) StringT(argv[3]) >> Port;
 
 	// Play state and stuff
 	struct
@@ -169,7 +169,7 @@ int main(int argc, char **argv)
 	{
 		auto Time = Duration * Percent;
 		unsigned int Minutes = Time / 60;
-		std::cout << Local("Time: ^0:^1", Minutes, String() << std::setfill('0') << std::setw(2) << ((unsigned int)Time - (Minutes * 60))) << "\n";
+		std::cout << Local("Time: ^0:^1", Minutes, StringT() << std::setfill('0') << std::setw(2) << ((unsigned int)Time - (Minutes * 60))) << "\n";
 	}); };
 	Core.AddCallback = [&](MediaInfo Item) { Async([&, Item](void) { Playlist.AddUpdate(Item); }); };
 	Core.RemoveCallback = [&](HashT const &MediaID) { Async([&, MediaID](void) { Playlist.Remove(MediaID); }); };
@@ -257,7 +257,7 @@ int main(int argc, char **argv)
 				}
 
 				size_t Index = 0;
-				static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+				static Regex::ParserT<size_t> Parse("\\s*(\\d+)$");
 				if (Parse(Column, Index))
 				{
 					auto SelectID = Playlist.GetID(Index);
@@ -356,7 +356,7 @@ int main(int argc, char **argv)
 		[&](std::string const &Line)
 		{
 			size_t Index = 0;
-			static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+			static Regex::ParserT<size_t> Parse("\\s*(\\d+)$");
 			if (Parse(Line, Index))
 			{
 				auto SelectID = Playlist.GetID(Index);
@@ -373,7 +373,7 @@ int main(int argc, char **argv)
 		[&](std::string const &Line)
 		{
 			size_t Index = 0;
-			static Regex::Parser<size_t> Parse("\\s*(\\d+)$");
+			static Regex::ParserT<size_t> Parse("\\s*(\\d+)$");
 			if (Parse(Line, Index))
 			{
 				auto SelectID = Playlist.GetID(Index);
@@ -413,7 +413,7 @@ int main(int argc, char **argv)
 		{
 			uint64_t Minutes = 0;
 			uint64_t Seconds = 0;
-			static Regex::Parser<uint64_t, uint64_t> Parse("\\s*(\\d+):(\\d+)$");
+			static Regex::ParserT<uint64_t, uint64_t> Parse("\\s*(\\d+):(\\d+)$");
 			if (Parse(Line, Minutes, Seconds))
 			{
 				auto CurrentID = Playlist.GetCurrentID();
@@ -437,7 +437,7 @@ int main(int argc, char **argv)
 			}
 			else
 			{
-				static Regex::Parser<uint64_t> Parse("\\s*(\\d+)$");
+				static Regex::ParserT<uint64_t> Parse("\\s*(\\d+)$");
 				if (Parse(Line, Volume)) Core.SetVolume((float)Volume / 100.0f);
 				else std::cout << Local("Bad volume.") << "\n";
 			}
@@ -468,7 +468,7 @@ int main(int argc, char **argv)
 		[&](std::string const &Line)
 		{
 			std::string Topic;
-			String(Line) >> Topic;
+			StringT(Line) >> Topic;
 			if (Topic.empty())
 			{
 				size_t Count = 0;
@@ -500,7 +500,7 @@ int main(int argc, char **argv)
 				return;
 			}
 			std::string Trimmed;
-			String(Line) >> Trimmed;
+			StringT(Line) >> Trimmed;
 			glob_t Globbed;
 			int Result = glob(Trimmed.c_str(), GLOB_TILDE, nullptr, &Globbed);
 			if (Result != 0)
@@ -535,7 +535,7 @@ int main(int argc, char **argv)
 		[&](std::string const &Line)
 		{
 			std::string Trimmed;
-			String(Line) >> Trimmed;
+			StringT(Line) >> Trimmed;
 			if (Trimmed.empty()) std::cout << Handle;
 			else
 			{

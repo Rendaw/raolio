@@ -3,9 +3,9 @@ DoOnce 'app/translation/Tupfile.lua'
 local LinkFlags = ' -luv'
 if tup.getconfig 'PLATFORM' ~= 'windows'
 then
-	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_regex -lboost_locale'
+	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_locale'
 else
-	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_regex-mt -lboost_locale-mt -lintl -lws2_32'
+	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_locale-mt -lintl -lws2_32'
 end
 
 local SharedObjects = Define.Objects

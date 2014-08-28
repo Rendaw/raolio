@@ -1,7 +1,7 @@
 #include "regex.h"
 #include "clientcore.h"
 #include "qtaux.h"
-#include "error.h"
+#include "type.h"
 #include "translation/translation.h"
 
 #include <QApplication>
@@ -87,7 +87,7 @@ struct ServerInfo
 
 	std::string Host;
 	uint16_t Port;
-	std::string URI(void) const { return String() << Host << ":" << Port; }
+	std::string URI(void) const { return StringT() << Host << ":" << Port; }
 
 	bool Remember;
 	std::string RememberAs;
@@ -95,7 +95,7 @@ struct ServerInfo
 	std::string Summary(void) const
 	{
 		if (Remember && !RememberAs.empty())
-			return String() << RememberAs << " (" << URI() << ")";
+			return StringT() << RememberAs << " (" << URI() << ")";
 		return URI();
 	}
 };
@@ -350,7 +350,7 @@ void OpenServerSelect(void)
 		Info.Remember = Remember->isChecked();
 		if (Info.Remember)
 			Info.RememberAs = RememberName->text().toUtf8().data();
-		static Regex::Parser<std::string, Regex::Ignore, uint16_t> Parse("^([^:]*)(:([0-9]+))?$");
+		static Regex::ParserT<std::string, Regex::Ignore, uint16_t> Parse("^([^:]*)(:([0-9]+))?$");
 		if (!Parse(Server->text().toUtf8().data(), Info.Host, Info.Port))
 		{
 			QMessageBox::warning(ConnectWindow, Local("Invalid server").c_str(), Local("The server you entered is invalid or in an unsupported format.").c_str());
@@ -600,7 +600,7 @@ struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 					{
 						auto &Track = Playlist[Index.row()].Track;
 						if (!Track) return QVariant();
-						return QString::fromUtf8((String() << *Track).str().c_str());
+						return QString::fromUtf8((StringT() << *Track).str().c_str());
 					}
 					case PlaylistColumns::Artist: return QString::fromUtf8(Playlist[Index.row()].Artist.c_str());
 					case PlaylistColumns::Album: return QString::fromUtf8(Playlist[Index.row()].Album.c_str());
@@ -728,7 +728,7 @@ struct GUIPlaylistType : PlaylistType, QAbstractItemModel
 			for (auto const &Move : Moves)
 				New.push_back(Playlist[Move]);
 
-		Assert(New.size(), Playlist.size());
+		AssertE(New.size(), Playlist.size());
 		layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
 		Playlist.swap(New);
 		layoutChanged({}, QAbstractItemModel::VerticalSortHint);
@@ -1014,7 +1014,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 		QObject::connect(Splitter, &QSplitter::splitterMoved, [=](int, int)
 		{
 			auto Sizes = Splitter->sizes();
-			Assert(Sizes.size(), 2);
+			AssertE(Sizes.size(), 2);
 			if (Sizes.front() == 0) ChatEntry->clearFocus();
 			if (Sizes.back() == 0) ChatEntry->setFocus();
 			Settings->setValue(SCSplitLeft, Sizes.front());
@@ -1044,7 +1044,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				{
 					uint64_t Minutes = 0;
 					uint64_t Seconds = 0;
-					static Regex::Parser<uint64_t, uint64_t> Parse("^pl?a?y?\\s*(\\d+):(\\d+)$");
+					static Regex::ParserT<uint64_t, uint64_t> Parse("^pl?a?y?\\s*(\\d+):(\\d+)$");
 					if (Parse(Command, Minutes, Seconds))
 					{
 						auto CurrentID = Playlist->GetCurrentID();
@@ -1062,7 +1062,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				else if (Matches("list") || Matches("ls"))
 				{
 					for (auto const &Item : Playlist->GetItems())
-						SharedWrite(String() <<
+						SharedWrite(StringT() <<
 							((Item.State == PlayState::Play) ? "> " :
 								((Item.State == PlayState::Pause) ? "= " :
 									"  ")) <<
@@ -1072,7 +1072,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				else if (Matches("handle") || Matches("nick"))
 				{
 					std::string NewHandle;
-					String(Command) >> NewHandle >> NewHandle;
+					StringT(Command) >> NewHandle >> NewHandle;
 					*Handle = NewHandle;
 				}
 				else SharedWrite(Local("Unknown command.\n"));
@@ -1384,7 +1384,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 
 		Core->Open(Host == "0.0.0.0" ? true : false, Host, Port);
 	}
-	catch (ConstructionError const &Error)
+	catch (ConstructionErrorT const &Error)
 	{
 		QMessageBox::warning(0, Local("Error during startup").c_str(), ((std::string)Error).c_str());
 		OpenServerSelect();

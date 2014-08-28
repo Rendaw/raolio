@@ -1,15 +1,20 @@
 #ifndef regex_h
 #define regex_h
 
-#include "shared.h"
+//#include "shared.h"
 #include "extrastandard.h"
 
-//#include <regex>
-#include <boost/regex.hpp>
+#include <regex>
+#define hack_regex_match std::regex_match
+#define hack_regex std::regex
+#define hack_smatch std::smatch
+#define hack_mark_count(regex) regex.mark_count()
+/*#include <boost/regex.hpp>
 #define hack_regex_match boost::regex_match
 #define hack_regex boost::regex
 #define hack_smatch boost::smatch
 #define hack_mark_count(regex) (regex.mark_count() - 1)
+*/
 #include <cassert>
 #include <map>
 #include <string>
@@ -21,21 +26,16 @@ namespace Regex
 
 struct Ignore {};
 
-template <typename EnumerationType> struct Enumeration : std::map<std::string, EnumerationType>
+template <typename EnumerationType> struct EnumerationT : std::map<std::string, EnumerationType>
 {
 	typedef EnumerationType Type;
 	using std::map<std::string, EnumerationType>::map;
-	Enumeration(void) = delete;
+	EnumerationT(void) = delete;
 };
 
-template <typename ...CaptureTypes> struct Parser
+template <typename ...CaptureTypes> struct ParserT
 {
-	Parser(char const *Pattern)
-	{
-		Expression.imbue(std::locale());
-		Expression.assign(Pattern);
-		Assert(hack_mark_count(Expression), sizeof...(CaptureTypes));
-	}
+	ParserT(char const *Pattern) : Expression{Pattern} { AssertE(hack_mark_count(Expression), sizeof...(CaptureTypes)); }
 
 	template <typename... OutputTypes>
 	bool operator()(std::string Input, OutputTypes &...Outputs)
@@ -79,7 +79,7 @@ template <typename ...CaptureTypes> struct Parser
 		{
 			Extract(hack_smatch const &Captures, NextType &Output, OutputTypes &...OtherOutputs)
 			{
-				String(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]) >> Output;
+				StringT(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]) >> Output;
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>(Captures, OtherOutputs...);
 			}
 		};
@@ -87,7 +87,7 @@ template <typename ...CaptureTypes> struct Parser
 		template <typename EnumerationType, typename ...RemainingTypes, typename ...OutputTypes>
 			struct Extract
 			<
-				//typename std::enable_if<std::is_same<EnumerationType, Enumeration<typename EnumerationType::Type>>::value>::type,
+				//typename std::enable_if<std::is_same<EnumerationType, EnumerationT<typename EnumerationType::Type>>::value>::type,
 				void,
 				std::tuple<EnumerationType, RemainingTypes...>,
 				std::tuple<typename EnumerationType::Type, OutputTypes...>
@@ -98,7 +98,7 @@ template <typename ...CaptureTypes> struct Parser
 				EnumerationType Enumeration;
 				typename EnumerationType::iterator Found =
 					Enumeration.find(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]);
-				Assert(Found != Enumeration.end());
+				AssertNE(Found, Enumeration.end());
 				Output = Found->second;
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>{Captures, OtherOutputs...};
 			}

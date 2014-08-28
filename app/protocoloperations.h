@@ -22,9 +22,9 @@ template <typename IntT> struct ProtocolOperations<IntT, typename std::enable_if
 	}
 };
 
-template <size_t Uniqueness, typename Type> struct ProtocolOperations<ExplicitCastable<Uniqueness, Type>, void>
+template <size_t Uniqueness, typename Type> struct ProtocolOperations<ExplicitCastableT<Uniqueness, Type>, void>
 {
-	typedef ExplicitCastable<Uniqueness, Type> Explicit;
+	typedef ExplicitCastableT<Uniqueness, Type> Explicit;
 	constexpr static size_t GetSize(Explicit const &Argument)
 		{ return ProtocolOperations<Type>::GetSize(*Argument); }
 
