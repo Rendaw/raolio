@@ -113,12 +113,12 @@ then
 		Sources = Item() + 'gui.cxx' + raolioguiMocOutputs,
 		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
 		BuildFlags = tup.getconfig 'GUIBUILDFLAGS',
-		LinkFlags = LinkFlags .. ' ' .. tup.getconfig 'GUILINKFLAGS' .. ' -lvlc'
+		LinkFlags = LinkFlags .. ' ' .. tup.getconfig 'GUILINKFLAGS' .. ' -lvlc -ltag'
 	}
 
 	local PackageDependencies = PackageDependencies ..
-		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3'" or '') ..
-		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', libqt5core5 (>= 5.0.2), libqt5widgets5 (>= 5.0.2), libqt5gui5 (>= 5.0.2), libvlc5 (>= 2.0.8-0)' or '')
+		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'qt5-base>=5.1.1-1', 'vlc>=2.1.0-3', 'taglib>=1.9.1-1'" or '') ..
+		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', libqt5core5 (>= 5.0.2), libqt5widgets5 (>= 5.0.2), libqt5gui5 (>= 5.0.2), libvlc5 (>= 2.0.8-0), taglib (>= 1.9.1-1)' or '')
 
 	Package = Define.Package
 	{
@@ -179,12 +179,12 @@ then
 		Name = 'raoliocli',
 		Sources = Item() + 'cli.cxx',
 		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
-		LinkFlags = LinkFlags .. ' -lreadline -lvlc'
+		LinkFlags = LinkFlags .. ' -lreadline -lvlc -ltag'
 	}
 
 	local PackageDependencies = PackageDependencies ..
-		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'readline>=6.2.004-1', 'vlc>=2.1.0-3'" or '') ..
-		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', readline6 (>= 6.2-9), libvlc5 (>= 2.0.8-0)' or '')
+		(tup.getconfig 'PLATFORM' == 'arch64' and ", 'readline>=6.2.004-1', 'vlc>=2.1.0-3', 'taglib>=1.9.1-1'" or '') ..
+		(tup.getconfig 'PLATFORM' == 'ubuntu' and ', readline6 (>= 6.2-9), libvlc5 (>= 2.0.8-0), taglib (>=1.9.1-1)' or '')
 	Package = Define.Package
 	{
 		Name = 'raoliocli',

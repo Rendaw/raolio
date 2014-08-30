@@ -105,7 +105,6 @@ struct ClientCore
 		bool IsPlayingInternal(void);
 
 		static void VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData);
-		static void VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData);
 
 		CallTransferType &CallTransfer; // Makes a call in the core's main thread
 

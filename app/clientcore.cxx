@@ -2,6 +2,7 @@
 
 #include "type.h"
 
+#include <taglib/fileref.h>
 #include <boost/locale.hpp>
 
 static struct SetBoostLocaleStatic
@@ -25,25 +26,6 @@ EngineWrapper::~EngineWrapper(void)
 {
 	libvlc_media_player_release(VLCMediaPlayer);
 	libvlc_release(VLC);
-}
-
-static std::string ExtractMeta(libvlc_media_t *Media, libvlc_meta_t const &MetaID, std::string const &Default = {})
-{
-	auto Out = libvlc_media_get_meta(Media, MetaID);
-	if (!Out) return Default;
-	return Out;
-}
-
-static void ExtractAllMeta(MediaInfo &Out, libvlc_media_t *Media)
-{
-	StringT TrackExtractor(ExtractMeta(Media, libvlc_meta_TrackNumber));
-	int16_t Track = -1;
-	TrackExtractor >> Track;
-	if (Track >= 0) Out.Track = Track;
-	else Out.Track = {};
-	Out.Artist = ExtractMeta(Media, libvlc_meta_Artist, Out.Artist);
-	Out.Album = ExtractMeta(Media, libvlc_meta_Album, Out.Album);
-	Out.Title = ExtractMeta(Media, libvlc_meta_Title, Out.Title);
 }
 
 MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
@@ -175,12 +157,16 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::
 	auto Item = new MediaItem{Hash, Filename, {}, {}, {}, DefaultTitle, VLCMedia};
 	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
 
-	if (libvlc_media_is_parsed(VLCMedia))
-		ExtractAllMeta(*Item, VLCMedia);
-	else
 	{
-		libvlc_event_attach(libvlc_media_event_manager(VLCMedia), libvlc_MediaParsedChanged, VLCMediaParsedCallback, new VLCParsedUserData{*this, Hash});
-		libvlc_media_parse_async(VLCMedia);
+		TagLib::FileRef TagFile(Filename.c_str());
+		auto Title = TagFile.tag()->title();
+		if (!Title.isEmpty()) Item->Title = Title.to8Bit(true);
+		auto Artist = TagFile.tag()->artist();
+		if (!Artist.isEmpty()) Item->Artist = Artist.to8Bit(true);
+		auto Album = TagFile.tag()->album();
+		if (!Album.isEmpty()) Item->Album = Album.to8Bit(true);
+		auto Track = TagFile.tag()->track();
+		if (Track > 0) Item->Track = Track;
 	}
 
 	if (AddCallback) AddCallback(*Item);
@@ -257,19 +243,6 @@ void ClientCore::VLCMediaEndCallback(libvlc_event_t const *Event, void *UserData
 {
 	auto This = static_cast<ClientCore *>(UserData);
 	if (This->EndCallback) This->EndCallback();
-}
-
-void ClientCore::VLCMediaParsedCallback(libvlc_event_t const *Event, void *UserData)
-{
-	auto Data = static_cast<VLCParsedUserData *>(UserData);
-	Data->Core.CallTransfer([Data](void)
-	{
-		auto Media = Data->Core.MediaLookup.find(Data->Hash);
-		if (Media == Data->Core.MediaLookup.end()) return;
-		ExtractAllMeta(*Media->second, Media->second->VLCMedia);
-		if (Data->Core.UpdateCallback) Data->Core.UpdateCallback(*Media->second.get());
-		delete Data;
-	});
 }
 
 PlaylistType::PlaylistInfo::PlaylistInfo(HashT const &Hash, decltype(State) const &State, OptionalT<uint16_t> const &Track, std::string const &Title, std::string const &Album, std::string const &Artist) : Hash(Hash), State{State}, Track{Track}, Title{Title}, Album{Album}, Artist{Artist} {}
