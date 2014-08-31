@@ -1,12 +1,11 @@
 #ifndef hash_h
 #define hash_h
 
-#include "shared.h"
 #include "type.h"
-#include <boost/filesystem.hpp>
-#include <array>
+#include "filesystem.h"
+using PathT = Filesystem::PathT;
 
-namespace bfs = boost::filesystem;
+#include <array>
 
 typedef std::array<uint8_t, 16> HashT;
 
@@ -14,6 +13,6 @@ std::string FormatHash(HashT const &Hash);
 
 OptionalT<HashT> UnformatHash(char const *String);
 
-OptionalT<std::pair<HashT, size_t>> HashFile(bfs::path const &Path);
+OptionalT<std::pair<HashT, size_t>> HashFile(PathT const &Path);
 
 #endif

@@ -68,14 +68,14 @@ int main(int argc, char **argv)
 			std::cerr << Local("--add requires a filename.") << std::endl;
 			goto FullBreak;
 		}
-		auto Hash = HashFile(argv[CommandIndex + 1]);
+		auto Hash = HashFile(PathT::Qualify(argv[CommandIndex + 1]));
 		if (!Hash)
 		{
 			std::cerr << Local("Invalid file to --add '^0'", argv[CommandIndex + 1]) << std::endl;
 			goto FullBreak;
 		}
 
-		Core.Transfer([&, Hash](void) { Core.Add(Hash->first, Hash->second, argv[CommandIndex + 1]); });
+		Core.Transfer([&, Hash](void) { Core.Add(Hash->first, Hash->second, PathT::Qualify(argv[CommandIndex + 1])); });
 	}
 	else if (Command == "--play")
 	{
@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 			std::cerr << Local("--play requires a filename.") << std::endl;
 			goto FullBreak;
 		}
-		auto Hash = HashFile(argv[CommandIndex + 1]);
+		auto Hash = HashFile(PathT::Qualify(argv[CommandIndex + 1]));
 		if (!Hash)
 		{
 			std::cerr << Local("Invalid file to --play '^0'", argv[CommandIndex + 1]) << std::endl;
@@ -93,7 +93,7 @@ int main(int argc, char **argv)
 
 		Core.Transfer([&, Hash](void)
 		{
-			Core.Add(Hash->first, Hash->second, argv[CommandIndex + 1]);
+			Core.Add(Hash->first, Hash->second, PathT::Qualify(argv[CommandIndex + 1]));
 			Core.Play(Hash->first, MediaTimeT(0), GetNow());
 		});
 	}

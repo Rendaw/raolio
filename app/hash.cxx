@@ -1,6 +1,5 @@
 #include "hash.h"
 
-#include <boost/filesystem/fstream.hpp>
 #include <iomanip>
 
 extern "C"
@@ -34,9 +33,9 @@ OptionalT<HashT> UnformatHash(char const *String)
 	return Hash;
 }
 
-OptionalT<std::pair<HashT, size_t>> HashFile(bfs::path const &Path)
+OptionalT<std::pair<HashT, size_t>> HashFile(PathT const &Path)
 {
-	bfs::ifstream File(Path);
+	FILE *File(fopen(Path->Render().c_str(), "r"));
 	if (!File) return {};
 
 	size_t Size = 0;
@@ -47,12 +46,12 @@ OptionalT<std::pair<HashT, size_t>> HashFile(bfs::path const &Path)
 	std::vector<uint8_t> Buffer(8192);
 	while (File)
 	{
-		File.read((char *)&Buffer[0], static_cast<long>(Buffer.size()));
-		std::streamsize Read = File.gcount();
+		size_t Read = fread((char *)&Buffer[0], 1, Buffer.size(), File);
 		if (Read <= 0) break;
-		Size += static_cast<size_t>(Read);
+		Size += Read;
 		cvs_MD5Update(&Context, &Buffer[0], static_cast<unsigned int>(Read));
 	}
+	fclose(File);
 	HashT Hash{};
 	cvs_MD5Final(&Hash[0], &Context);
 	return std::make_pair(Hash, Size);

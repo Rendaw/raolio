@@ -7,9 +7,6 @@
 #include <vlc/vlc.h>
 #include <map>
 #include <vector>
-#include <boost/filesystem.hpp>
-
-namespace bfs = boost::filesystem;
 
 typedef StrictType(float) MediaTimePercentT;
 
@@ -45,7 +42,7 @@ struct EngineWrapper
 struct MediaInfo
 {
 	HashT Hash;
-	bfs::path Filename;
+	PathT Filename;
 	OptionalT<uint16_t> Track;
 	std::string Artist;
 	std::string Album;
@@ -56,7 +53,7 @@ struct MediaItem : MediaInfo
 {
 	libvlc_media_t *VLCMedia;
 
-	MediaItem(HashT const &Hash, bfs::path const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
+	MediaItem(HashT const &Hash, PathT const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia);
 	~MediaItem(void);
 };
 
@@ -78,7 +75,7 @@ struct ClientCore
 
 	void Open(bool Listen, std::string const &Host, uint16_t Port);
 
-	void Add(HashT const &Hash, size_t Size, bfs::path const &Filename);
+	void Add(HashT const &Hash, size_t Size, PathT const &Filename);
 	void Remove(HashT const &Hash);
 	void RemoveAll(void);
 
@@ -92,7 +89,7 @@ struct ClientCore
 	void Chat(std::string const &Message);
 
 	private:
-		void AddInternal(HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle);
+		void AddInternal(HashT const &Hash, PathT const &Filename, std::string const &DefaultTitle);
 		void RemoveInternal(HashT const &Hash);
 
 		void SetVolumeInternal(float Volume);

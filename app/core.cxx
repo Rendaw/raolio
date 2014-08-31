@@ -1,8 +1,13 @@
 #include "core.h"
 
 #include "translation/translation.h"
+#include "filesystem_string.h"
 
 #include <random>
+
+#ifdef _WIN32
+#define fopen _wfopen
+#endif
 
 uint64_t GeneratePUID(void) // Probably Unique ID
 {
@@ -107,20 +112,19 @@ bool CoreConnection::IdleWrite(void)
 
 	if (RequestNext()) return true;
 
-	if (Response.File.is_open() && !Response.File.eof())
+	if (Response.File && !feof(Response.File))
 	{
 		std::vector<uint8_t> Data(ChunkSize);
-		AssertE(Response.File.tellg(), Response.Chunk * ChunkSize);
-		Response.File.read((char *)&Data[0], ChunkSize);
-		std::streamsize Read = Response.File.gcount();
+		AssertE(ftell(Response.File), Response.Chunk * ChunkSize);
+		auto Read = fread(&Data[0], 1, ChunkSize, Response.File);
 		if (Read > 0)
 		{
 			Data.resize(static_cast<size_t>(Read));
 			Send(NP1V1Data{}, Response.ID, Response.Chunk, Data);
 			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Sent ^0 chunk ^1 ^2 - ^3 (^4)", FormatHash(Response.ID), Response.Chunk, Response.Chunk * ChunkSize, Response.Chunk * ChunkSize + Data.size() - 1, Data.size()));
-			Assert((Read == ChunkSize) || (Response.File.eof()));
+			Assert((Read == ChunkSize) || (feof(Response.File)));
 			++Response.Chunk;
-			if (!Response.File.eof()) return true;
+			if (!feof(Response.File)) return true;
 		}
 	}
 
@@ -132,7 +136,7 @@ void CoreConnection::HandleTimer(uint64_t const &Now)
 {
 	Send(NP1V1Clock{}, Parent.ID, Now);
 
-	if (Request.File.is_open() && ((GetNow() - Request.LastResponse) > 10 * 1000))
+	if (Request.File && ((GetNow() - Request.LastResponse) > 10 * 1000))
 	{
 		if (Request.Attempts > 10)
 			RequestNext();
@@ -171,23 +175,21 @@ void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &
 	if (Parent.LogCallback) Parent.LogCallback(Core::Useless, Local("Recieved request."));
 	auto Out = Parent.Library.find(MediaID);
 	if (Out == Parent.Library.end()) return;
-	if (!Response.File.is_open() || (MediaID != Response.ID))
+	if (!Response.File || (MediaID != Response.ID))
 	{
-		if (Response.File.is_open()) Response.File.close();
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opening '^0'", Out->second.Path.string()));
-		Response.File.open(Out->second.Path, std::fstream::in);
-		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opened '^0'", Out->second.Path.string()));
-		Assert(Response.File.is_open());
-		Assert(!Response.File.eof());
-		Assert(!Response.File.fail());
-		Assert(!Response.File.bad());
+		if (Response.File) { fclose(Response.File); Response.File = nullptr; }
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opening '^0'", Out->second.Path));
+		Response.File = fopen(ToNativeString(Out->second.Path->Render()).c_str(), ToNativeString("r").c_str());
+		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opened '^0'", Out->second.Path));
+		Assert(Response.File);
+		Assert(!feof(Response.File));
+		Assert(!ferror(Response.File));
 	}
-	Assert(Response.File.is_open());
-	Assert(!Response.File.eof());
-	Assert(!Response.File.fail());
-	Assert(!Response.File.bad());
-	Response.File.seekg(static_cast<std::streamsize>(From * ChunkSize), std::ios::beg);
-	AssertE(Response.File.tellg(), static_cast<std::streamsize>(From * ChunkSize));
+	Assert(Response.File);
+	Assert(!feof(Response.File));
+	Assert(!ferror(Response.File));
+	fseek(Response.File, From * ChunkSize, 0);
+	AssertE(ftell(Response.File), From * ChunkSize);
 	Response.ID = MediaID;
 	Response.Chunk = From;
 	WakeIdleWrite();
@@ -199,14 +201,15 @@ void CoreConnection::Handle(NP1V1Data, HashT const &MediaID, uint64_t const &Chu
 	if (MediaID != Request.ID) return;
 	if (Chunk != Request.Pieces.Next()) return;
 	Assert(Request.File);
-	AssertE(Request.File.tellp(), Chunk * ChunkSize);
+	AssertE(ftell(Request.File), Chunk * ChunkSize);
 	if ((Bytes.size() != ChunkSize) && (Chunk * ChunkSize + Bytes.size() != Request.Size)) return; // Probably an error condition
 	Request.Pieces.Set(Chunk);
-	Request.File.write((char const *)&Bytes[0], Bytes.size());
+	fwrite(&Bytes[0], Bytes.size(), 1, Request.File);
 	Request.LastResponse = GetNow();
 	if (Request.Pieces.Finished())
 	{
-		Request.File.close();
+		fclose(Request.File);
+		Request.File = nullptr;
 		Parent.Library.emplace(Request.ID, Core::LibraryInfo{Request.Size, Request.Path, Request.DefaultTitle});
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Finished receiving ^0", FormatHash(Request.ID)));
 		if (Parent.AddCallback) Parent.AddCallback(Request.ID, Request.Path, Request.DefaultTitle);
@@ -267,9 +270,9 @@ bool CoreConnection::RequestNext(void)
 		Request.Pieces = {1 + ((Request.Size - 1) / ChunkSize)};
 		Request.Attempts = 0;
 		Request.DefaultTitle = PendingRequests.front().DefaultTitle;
-		Request.Path = Parent.TempPath / (FormatHash(Request.ID) + PendingRequests.front().Extension);
-		if (Request.File.is_open()) Request.File.close();
-		Request.File.open(Request.Path, std::fstream::out);
+		Request.Path = Parent.TempPath->Enter(FormatHash(Request.ID) + PendingRequests.front().Extension);
+		if (Request.File) { fclose(Request.File); Request.File = nullptr; }
+		Request.File = fopen(ToNativeString(Request.Path->Render()).c_str(), ToNativeString("w").c_str());
 		if (!Request.File)
 		{
 			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Could not create core library file ^0", Request.Path));
@@ -287,11 +290,11 @@ bool CoreConnection::RequestNext(void)
 void CoreConnection::Remove(HashT const &MediaID)
 {
 	if (Request.ID == MediaID) RequestNext();
-	if ((Response.ID == MediaID) && (Response.File.is_open())) Response.File.close();
+	if ((Response.ID == MediaID) && (Response.File)) { fclose(Response.File); Response.File = nullptr; }
 }
 
 Core::Core(bool PruneOldItems) :
-	TempPath{bfs::temp_directory_path() / bfs::unique_path()},
+	TempPath{PathT::Temp(false)},
 	ID{GeneratePUID()},
 	Prune{PruneOldItems},
 	Last{false},
@@ -306,21 +309,7 @@ Core::Core(bool PruneOldItems) :
 				std::list<HashT> Removing;
 				for (auto const &Item : Library)
 				{
-					auto ItemIterator = Item.second.Path.begin();
-					auto TempIterator = TempPath.begin();
-					bool IsCached = true;
-					while (TempIterator != TempPath.end())
-					{
-						if ((ItemIterator == Item.second.Path.end()) ||
-							(*ItemIterator != *TempIterator))
-						{
-							IsCached = false;
-							break;
-						}
-						++TempIterator;
-						++ItemIterator;
-					}
-					if (IsCached)
+					if (TempPath->Contains(Item.second.Path))
 						Removing.push_back(Item.first);
 				}
 				for (auto const &Hash : Removing)
@@ -328,12 +317,16 @@ Core::Core(bool PruneOldItems) :
 					if (RemoveCallback) RemoveCallback(Hash);
 					Library.erase(Hash);
 				}
-				bfs::remove_all(TempPath);
-				bfs::create_directory(TempPath);
+				TempPath->Delete();
+				TempPath->CreateDirectory();
 			}
 			auto Out = new CoreConnection{*this, Host, Port, Watcher, ReadCallback};
 			for (auto Item : Library)
-				Out->Announce.emplace(Item.first, Item.second.Path.extension().string(), Item.second.Size, Item.second.DefaultTitle);
+			{
+				auto Extension = Item.second.Path->Extension();
+				if (!Extension) Extension = "xxx";
+				Out->Announce.emplace(Item.first, *Extension, Item.second.Size, Item.second.DefaultTitle);
+			}
 			Out->WakeIdleWrite();
 			return Out;
 		},
@@ -341,12 +334,12 @@ Core::Core(bool PruneOldItems) :
 	}
 {
 	Net.LogCallback = [&](std::string const &Message) { if (LogCallback) LogCallback(Important, Local("Network: ^0", Message)); };
-	bfs::create_directory(TempPath);
+	TempPath->CreateDirectory();
 }
 
 Core::~Core(void)
 {
-	bfs::remove_all(TempPath);
+	TempPath->Delete();
 }
 
 void Core::Open(bool Listen, std::string const &Host, uint16_t Port)
@@ -364,15 +357,17 @@ void Core::Schedule(float Seconds, std::function<void(void)> const &Call)
 	Net.Schedule(Seconds, Call);
 }
 
-void Core::Add(HashT const &MediaID, size_t Size, bfs::path const &Path)
+void Core::Add(HashT const &MediaID, size_t Size, PathT const &Path)
 {
 	try
 	{
-		Library.emplace(MediaID, LibraryInfo{Size, Path, Path.filename().string()});
+		Library.emplace(MediaID, LibraryInfo{Size, Path, Path->Filename()});
 
 		for (auto &Connection : Net.GetConnections())
 		{
-			Connection->Announce.emplace(MediaID, Path.extension().string(), Size, Path.filename().string());
+			auto Extension = Path->Extension();
+			if (!Extension) Extension = "xxx";
+			Connection->Announce.emplace(MediaID, *Extension, Size, Path->Filename());
 			Connection->WakeIdleWrite();
 		}
 	}

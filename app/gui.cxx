@@ -933,7 +933,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				}
 				for (auto File : Selected)
 				{
-					auto Hash = HashFile(File.toUtf8().data());
+					auto Hash = HashFile(PathT::Qualify(File.toUtf8().data()));
 					if (!Hash)
 					{
 #ifndef NDEBUG
@@ -941,7 +941,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 #endif
 						continue;
 					}
-					Core->Add(Hash->first, Hash->second, File.toUtf8().data());
+					Core->Add(Hash->first, Hash->second, PathT::Qualify(File.toUtf8().data()));
 				}
 				*AlreadySelected = true;
 			});

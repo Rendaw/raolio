@@ -3,9 +3,9 @@ DoOnce 'app/translation/Tupfile.lua'
 local LinkFlags = ' -luv'
 if tup.getconfig 'PLATFORM' ~= 'windows'
 then
-	LinkFlags = LinkFlags .. ' -pthread -lboost_system -lboost_filesystem -lboost_locale'
+	LinkFlags = LinkFlags .. ' -pthread'
 else
-	LinkFlags = LinkFlags .. ' -lboost_system-mt -lboost_filesystem-mt -lboost_locale-mt -lintl -lws2_32'
+	LinkFlags = LinkFlags .. ' -lintl -lws2_32'
 end
 
 local SharedObjects = Define.Objects
@@ -16,6 +16,7 @@ local SharedObjects = Define.Objects
 		+ 'hash.cxx'
 		+ 'md5.c'
 		+ 'network.cxx'
+		+ 'filesystem.cxx'
 } + TranslationObjects
 
 local SharedClientObjects = Define.Objects
@@ -89,8 +90,8 @@ then
 end
 
 local PackageDependencies =
-	(tup.getconfig 'PLATFORM' == 'arch64' and "'boost>=1.54.0-3', 'boost-libs>=1.54.0-3', 'libuv-git>=20120905-1'" or '') ..
-	(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libboost-all-dev (>= 1.53.0-0), libev4 (>= 1.4.11-1)' or '')
+	(tup.getconfig 'PLATFORM' == 'arch64' and "'libuv-git>=20120905-1'" or '') ..
+	(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libev4 (>= 1.4.11-1)' or '') -- TODO remove ev?
 
 if tup.getconfig 'BUILDGUI' ~= 'false'
 then

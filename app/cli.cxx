@@ -230,8 +230,8 @@ int main(int argc, char **argv)
 
 				for (decltype(Globbed.gl_pathc) Index = 0; Index < Globbed.gl_pathc; ++Index)
 				{
-					bfs::path Filename = Globbed.gl_pathv[Index];
-					if (bfs::is_directory(Filename)) continue;
+					auto Filename = PathT::Qualify(Globbed.gl_pathv[Index]);
+					//if (Filename.DirectoryExists()) continue;
 					auto Hash = HashFile(Filename);
 					assert(Hash);
 					if (!Hash) break;
@@ -495,7 +495,7 @@ int main(int argc, char **argv)
 		{
 			if (Line.empty())
 			{
-				try { std::cout << bfs::current_path() << "\n"; }
+				try { std::cout << PathT::Here()->Render() << "\n"; }
 				catch (...) { std::cout << Local("Unable to determine current path.") + "\n"; }
 				return;
 			}

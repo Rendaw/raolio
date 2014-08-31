@@ -3,16 +3,6 @@
 #include "type.h"
 
 #include <taglib/fileref.h>
-#include <boost/locale.hpp>
-
-static struct SetBoostLocaleStatic
-{
-	SetBoostLocaleStatic(void)
-	{
-		std::locale::global(boost::locale::generator().generate(""));
-		boost::filesystem::path::imbue(std::locale());
-	}
-} SetBoostLocale;
 
 EngineWrapper::EngineWrapper(void)
 {
@@ -28,7 +18,7 @@ EngineWrapper::~EngineWrapper(void)
 	libvlc_release(VLC);
 }
 
-MediaItem::MediaItem(HashT const &Hash, bfs::path const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
+MediaItem::MediaItem(HashT const &Hash, PathT const &Filename, OptionalT<uint16_t> const &Track, std::string const &Artist, std::string const &Album, std::string const &Title, libvlc_media_t *VLCMedia) : MediaInfo{Hash, Filename, Track, Artist, Album, Title}, VLCMedia{VLCMedia} {}
 
 MediaItem::~MediaItem(void) { libvlc_media_release(VLCMedia); }
 
@@ -47,7 +37,7 @@ ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Play
 	};
 
 	Parent.ChatCallback = [this](std::string const &Message) { if (LogCallback) LogCallback(Message); };
-	Parent.AddCallback = [this](HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle)
+	Parent.AddCallback = [this](HashT const &Hash, PathT const &Filename, std::string const &DefaultTitle)
 		{ AddInternal(Hash, Filename, DefaultTitle); };
 	Parent.RemoveCallback = [this](HashT const &Hash)
 		{ RemoveInternal(Hash); };
@@ -62,12 +52,12 @@ ClientCore::ClientCore(float Volume) : CallTransfer(Parent), Parent{false}, Play
 void ClientCore::Open(bool Listen, std::string const &Host, uint16_t Port)
 	{ Parent.Open(Listen, Host, Port); }
 
-void ClientCore::Add(HashT const &Hash, size_t Size, bfs::path const &Filename)
+void ClientCore::Add(HashT const &Hash, size_t Size, PathT const &Filename)
 {
 	CallTransfer([=](void)
 	{
 		Parent.Add(Hash, Size, Filename);
-		AddInternal(Hash, Filename, Filename.filename().string());
+		AddInternal(Hash, Filename, Filename->Filename());
 	});
 }
 
@@ -144,10 +134,10 @@ struct VLCParsedUserData
 	HashT Hash;
 };
 
-void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::string const &DefaultTitle)
+void ClientCore::AddInternal(HashT const &Hash, PathT const &Filename, std::string const &DefaultTitle)
 {
 	if (MediaLookup.find(Hash) != MediaLookup.end()) return;
-	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename.string().c_str());
+	auto *VLCMedia = libvlc_media_new_path(Engine.VLC, Filename->Render().c_str());
 	if (!VLCMedia)
 	{
 		if (LogCallback) LogCallback(Local("Failed to open selected media, ^0: ^1", Filename, libvlc_errmsg()));
@@ -158,15 +148,19 @@ void ClientCore::AddInternal(HashT const &Hash, bfs::path const &Filename, std::
 	MediaLookup[Hash] = std::unique_ptr<MediaItem>(Item);
 
 	{
-		TagLib::FileRef TagFile(Filename.c_str());
-		auto Title = TagFile.tag()->title();
-		if (!Title.isEmpty()) Item->Title = Title.to8Bit(true);
-		auto Artist = TagFile.tag()->artist();
-		if (!Artist.isEmpty()) Item->Artist = Artist.to8Bit(true);
-		auto Album = TagFile.tag()->album();
-		if (!Album.isEmpty()) Item->Album = Album.to8Bit(true);
-		auto Track = TagFile.tag()->track();
-		if (Track > 0) Item->Track = Track;
+		TagLib::FileRef TagFile(Filename->Render().c_str());
+		auto Tags = TagFile.tag();
+		if (Tags)
+		{
+			auto Title = Tags->title();
+			if (!Title.isEmpty()) Item->Title = Title.to8Bit(true);
+			auto Artist = Tags->artist();
+			if (!Artist.isEmpty()) Item->Artist = Artist.to8Bit(true);
+			auto Album = Tags->album();
+			if (!Album.isEmpty()) Item->Album = Album.to8Bit(true);
+			auto Track = Tags->track();
+			if (Track > 0) Item->Track = Track;
+		}
 	}
 
 	if (AddCallback) AddCallback(*Item);

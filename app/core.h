@@ -5,11 +5,7 @@
 #include "protocoloperations.h"
 #include "network.h"
 #include "hash.h"
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
 #include <map>
-
-namespace bfs = boost::filesystem;
 
 constexpr uint64_t ChunkSize = 512; // Set for all protocol versions
 
@@ -65,8 +61,8 @@ struct CoreConnection : Network<CoreConnection>::Connection
 		uint64_t Size;
 		FilePieces Pieces;
 		uint64_t LastResponse; // Time, ms since epoch
-		bfs::path Path;
-		bfs::fstream File;
+		PathT Path;
+		FILE *File = nullptr;
 		unsigned int Attempts;
 		std::string DefaultTitle;
 	} Request;
@@ -75,7 +71,7 @@ struct CoreConnection : Network<CoreConnection>::Connection
 	struct
 	{
 		HashT ID;
-		bfs::fstream File;
+		FILE *File = nullptr;
 		uint64_t Chunk;
 	} Response;
 
@@ -117,7 +113,7 @@ struct Core : CallTransferType
 	void Schedule(float Seconds, std::function<void(void)> const &Call);
 
 	// Core thread only
-	void Add(HashT const &MediaID, size_t Size, bfs::path const &Path);
+	void Add(HashT const &MediaID, size_t Size, PathT const &Path);
 	void Remove(HashT const &MediaID);
 	void Play(HashT const &MediaID, MediaTimeT Position, uint64_t SystemTime);
 	void Stop(void);
@@ -130,7 +126,7 @@ struct Core : CallTransferType
 	std::function<void(LogPriority Priority, std::string const &Message)> LogCallback;
 
 	std::function<void(uint64_t InstanceID, uint64_t const &SystemTime)> ClockCallback;
-	std::function<void(HashT const &MediaID, bfs::path const &Path, std::string const &DefaultTitle)> AddCallback;
+	std::function<void(HashT const &MediaID, PathT const &Path, std::string const &DefaultTitle)> AddCallback;
 	std::function<void(HashT const &MediaID)> RemoveCallback;
 	std::function<void(HashT const &MediaID, MediaTimeT MediaTime, uint64_t const &SystemTime)> PlayCallback;
 	std::function<void(void)> StopCallback;
@@ -141,7 +137,7 @@ struct Core : CallTransferType
 
 		void RemoveInternal(HashT const &MediaID);
 
-		bfs::path const TempPath;
+		PathT const TempPath;
 		uint64_t const ID;
 
 		bool const Prune;
@@ -151,9 +147,9 @@ struct Core : CallTransferType
 		struct LibraryInfo
 		{
 			uint64_t Size;
-			bfs::path Path;
+			PathT Path;
 			std::string DefaultTitle;
-			LibraryInfo(uint64_t Size, bfs::path const &Path, std::string const &DefaultTitle) : Size{Size}, Path{Path}, DefaultTitle{DefaultTitle} {}
+			LibraryInfo(uint64_t Size, PathT const &Path, std::string const &DefaultTitle) : Size{Size}, Path{Path}, DefaultTitle{DefaultTitle} {}
 		};
 		std::map<HashT, LibraryInfo> Library;
 

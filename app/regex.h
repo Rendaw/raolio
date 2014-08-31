@@ -98,7 +98,7 @@ template <typename ...CaptureTypes> struct ParserT
 				EnumerationType Enumeration;
 				typename EnumerationType::iterator Found =
 					Enumeration.find(Captures[sizeof...(CaptureTypes) - sizeof...(RemainingTypes)]);
-				AssertNE(Found, Enumeration.end());
+				Assert(Found != Enumeration.end());
 				Output = Found->second;
 				Extract<void, std::tuple<RemainingTypes...>, std::tuple<OutputTypes...>>{Captures, OtherOutputs...};
 			}
