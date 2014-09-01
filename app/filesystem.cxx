@@ -7,6 +7,15 @@
 #include <wchar.h>
 #include <direct.h>
 #include <shlobj.h>
+
+struct SeedRandomT
+{
+	SeedRandomT(void) 
+	{ 
+		srand(time(NULL));
+	}
+} static SeedRandom;
+
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -210,7 +219,7 @@ PathT PathT::Absolute(std::string const &Raw)
 #ifdef _WIN32
 	std::smatch DriveMatch;
 	if (!Assert(std::regex_search(Raw, DriveMatch, DriveRegex))) throw ConstructionErrorT() << "Windows absolute paths must contain drive.  This path is invalid: " << Raw;
-	return PathT({DriveMatch[0], "\\"})->EnterRaw(DriveMatch[1]);
+	return PathT(PathSettingsT{DriveMatch[1].str(), "\\"})->EnterRaw(DriveMatch[2]);
 #else
 	return PathT(PathSettingsT{{}, std::string(1, Raw[0])})->EnterRaw(Raw);
 #endif
@@ -239,43 +248,57 @@ PathT PathT::Temp(bool File, OptionalT<PathT> const &Base)
 	std::vector<wchar_t> BaseString;
 	if (Base) 
 	{
-		auto Native = ToNativeString(Base->Render());
-		std::copy(Native.begin(), Native.end(), BaseString.begin());
+		auto Native = ToNativeString((*Base)->Render());
+		BaseString.insert(BaseString.begin(), Native.begin(), Native.end());
 	}
 	else 
 	{
 		// Get temp dir
 		BaseString.resize(MAX_PATH);
 		auto Length = GetTempPathW(BaseString.size(), &BaseString[0]);
-		if (Length == 0) throw ConstructionErrorT() << "Could not find temporary file directory.";
+		if (Length <= 0) throw ConstructionErrorT() << "Could not find temporary file directory.";
 		BaseString.resize(Length);
 	}
 
-	std::vector<wchar_t> TemporaryFilename;
-	TemporaryFilename.resize(MAX_PATH);
-	auto Length = GetTempFileNameW(&BaseString[0], L"zar", 0, &TemporaryFilename[0]);
-	if (Length == 0) throw ConstructionErrorT() << "Could not determine a temporary filename.";
-	Length = GetLongPathNameW(&TemporaryFilename[0], &TemporaryFilename[0], TemporaryFilename.size());
-	AssertGE(Length, 0);
-	TemporaryFilename.resize(Length);
-	if ((unsigned int)Length > TemporaryFilename.size())
-	{
-		Length = GetLongPathNameW(&TemporaryFilename[0], &TemporaryFilename[0], TemporaryFilename.size());
-		AssertLE((unsigned int)Result, TemporaryFilename.size());
-	}
-	if (Length == 0) throw Error::System("Could not qualify the temporary filename.");
 	if (File)
 	{
-		auto Result = CreateFileW(&TemporaryFilename[0], GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (Result == INVALID_HANDLE_VALUE) throw ConstructionErrorT() << "Failed to create temporary file.";
-		CloseHandle(Result);
+		std::vector<wchar_t> TemporaryFilename;
+		TemporaryFilename.resize(MAX_PATH);
+		auto Length = GetTempFileNameW(&BaseString[0], L"zar", 0, &TemporaryFilename[0]);
+		if (Length == 0) throw ConstructionErrorT() << "Could not determine a temporary filename.";
+		Length = GetLongPathNameW(&TemporaryFilename[0], &TemporaryFilename[0], TemporaryFilename.size());
+		AssertGTE(Length, 0);
+		if ((unsigned int)Length > TemporaryFilename.size())
+		{
+			TemporaryFilename.resize(Length + 1);
+			Length = GetLongPathNameW(&TemporaryFilename[0], &TemporaryFilename[0], TemporaryFilename.size());
+			AssertLTE((unsigned int)Length, TemporaryFilename.size());
+		}
+		else TemporaryFilename.resize(Length + 1);
+		TemporaryFilename[TemporaryFilename.size() - 1] = 0;
+		if (Length == 0) throw ConstructionErrorT() << "Could not qualify the temporary filename.";
+		return Absolute(FromNativeString(std::u16string((char16_t *)&TemporaryFilename[0], TemporaryFilename.size() - 1)));
 	}
 	else
 	{
-		int Result = _wmkdir(&TemporaryFilename[0]);
-		if (Result == -1) throw ConstructionErrorT() << "Failed to create temporary directory (error code " << Result << ").";
+		auto const Start = BaseString.size();
+		BaseString.resize(BaseString.size() + 9);
+		BaseString[Start + 8] = 0;
+		for (size_t Attempt = 0; Attempt < 3; ++Attempt)
+		{
+			for (size_t Offset = 0; Offset < 8; ++Offset)
+			{
+				static wchar_t const Characters[] = L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+				auto Index = rand() % (sizeof(Characters) / sizeof(wchar_t) - 1);
+				BaseString[Start + Offset] = Characters[Index];
+			}
+			auto Result = _wmkdir(&BaseString[0]);
+			if (Result == -1) 
+				std::cout << "Failed to create temporary directory (" << strerror(errno) << ")." << std::endl;
+			else return Absolute(FromNativeString(std::u16string((char16_t *)&BaseString[0], BaseString.size() - 1)));
+		}
+		throw ConstructionErrorT() << "Failed to create temporary directory 3 times (" << strerror(errno) << ").";
 	}
-	return Absolute(FromNativeString(std::u16string(&TemporaryFilename[0], TemporaryFilename.size())));
 #else
 	std::vector<char> BaseString;
 	if (Base)

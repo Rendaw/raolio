@@ -1,10 +1,14 @@
 DoOnce 'app/translation/Tupfile.lua'
 
 local LinkFlags = ' -luv'
+local VLCLinkFlags = ''
 if tup.getconfig 'PLATFORM' ~= 'windows'
 then
+	VLCLinkFlags = ' -lvlc'
 	LinkFlags = LinkFlags .. ' -pthread'
 else
+	for Match in tup.getconfig('WINDOWSVLCDLLS'):gmatch '[^:]+'
+		do VLCLinkFlags = VLCLinkFlags .. ' ' .. Match end
 	LinkFlags = LinkFlags .. ' -lintl -lws2_32'
 end
 
@@ -27,12 +31,11 @@ local SharedClientObjects = Define.Objects
 
 local WindowsIconRes = Item()
 local ExtraCoreLibraries = Item()
-local ExtraBoostLibraries = Item()
 local ExtraVLCLibraries = Item()
 local ExtraQt5Libraries = Item()
 local ExtraQt5PlatformLibraries = Item()
-local ExtraBoostLicenses = Item()
 local ExtraVLCLicenses = Item()
+local ExtraTaglibLicenses = Item()
 local ExtraVLCPluginLibrariesAccess = Item()
 local ExtraVLCPluginLibrariesDemux = Item()
 local ExtraVLCPluginLibrariesAudioMixer = Item()
@@ -72,12 +75,11 @@ then
 		return Storage
 	end
 	ExtraCoreLibraries = AddExtras(ExtraCoreLibraries, 'WINDOWSCOREDLLS')
-	ExtraBoostLibraries = AddExtras(ExtraBoostLibraries, 'WINDOWSBOOSTDLLS')
 	ExtraVLCLibraries = AddExtras(ExtraVLCLibraries, 'WINDOWSVLCDLLS')
 	ExtraQt5Libraries = AddExtras(ExtraQt5Libraries, 'WINDOWSQT5DLLS')
 	ExtraQt5PlatformLibraries = AddExtras(ExtraQt5PlatformLibraries, 'WINDOWSQT5PLATFORMDLLS')
-	ExtraBoostLicenses = AddExtras(ExtraBoostLicenses, 'WINDOWSBOOSTLICENSES')
 	ExtraVLCLicenses = AddExtras(ExtraVLCLicenses, 'WINDOWSVLCLICENSES')
+	ExtraTaglibLicenses = AddExtras(ExtraTaglibLicenses, 'WINDOWSTAGLIBLICENSES')
 	ExtraVLCPluginLibrariesAccess = AddExtras(ExtraVLCPluginLibrariesAccess, 'WINDOWSVLCPLUGINDLLS_ACCESS')
 	ExtraVLCPluginLibrariesDemux = AddExtras(ExtraVLCPluginLibrariesDemux, 'WINDOWSVLCPLUGINDLLS_DEMUX')
 	ExtraVLCPluginLibrariesAudioMixer = AddExtras(ExtraVLCPluginLibrariesAudioMixer, 'WINDOWSVLCPLUGINDLLS_AUDIOMIXER')
@@ -90,7 +92,7 @@ then
 end
 
 local PackageDependencies =
-	(tup.getconfig 'PLATFORM' == 'arch64' and "'libuv-git>=20120905-1'" or '') ..
+	(tup.getconfig 'PLATFORM' == 'arch64' and "'libuv>=0.11.28'" or '') ..
 	(tup.getconfig 'PLATFORM' == 'ubuntu' and 'libev4 (>= 1.4.11-1)' or '') -- TODO remove ev?
 
 if tup.getconfig 'BUILDGUI' ~= 'false'
@@ -114,7 +116,7 @@ then
 		Sources = Item() + 'gui.cxx' + raolioguiMocOutputs,
 		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
 		BuildFlags = tup.getconfig 'GUIBUILDFLAGS',
-		LinkFlags = LinkFlags .. ' ' .. tup.getconfig 'GUILINKFLAGS' .. ' -lvlc -ltag'
+		LinkFlags = LinkFlags .. ' ' .. tup.getconfig 'GUILINKFLAGS' .. VLCLinkFlags .. ' -ltag'
 	}
 
 	local PackageDependencies = PackageDependencies ..
@@ -130,7 +132,7 @@ then
 		ArchLicenseStyle = 'LGPL',
 		DebianSection = 'sound',
 		Licenses = Item('../license-raolio.txt'),
-		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
+		ExtraLibraries = ExtraCoreLibraries + ExtraVLCLibraries + ExtraQt5Libraries,
 		ExtraQt5PlatformLibraries = ExtraQt5PlatformLibraries,
 		ExtraVLCPluginLibrariesAccess = ExtraVLCPluginLibrariesAccess,
 		ExtraVLCPluginLibrariesDemux = ExtraVLCPluginLibrariesDemux,
@@ -138,7 +140,7 @@ then
 		ExtraVLCPluginLibrariesAudioFilter = ExtraVLCPluginLibrariesAudioFilter,
 		ExtraVLCPluginLibrariesAudioOutput = ExtraVLCPluginLibrariesAudioOutput,
 		ExtraVLCPluginLibrariesCodec = ExtraVLCPluginLibrariesCodec,
-		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibUVLicenses
+		ExtraLicenses = ExtraTaglibLicenses + ExtraVLCLicenses + ExtraQt5Licenses + ExtraGettextLicenses + ExtraLibUVLicenses
 	}
 end
 
@@ -168,8 +170,8 @@ then
 		ArchLicenseStyle = 'LGPL3',
 		DebianSection = 'sound',
 		Licenses = Item '../license-raolio.txt',
-		ExtraLibraries = ExtraCoreLibraries + ExtraBoostLibraries + ExtraVLCLibraries,
-		ExtraLicenses = ExtraBoostLicenses + ExtraVLCLicenses + ExtraGettextLicenses + ExtraLibUVLicenses
+		ExtraLibraries = ExtraCoreLibraries + ExtraVLCLibraries,
+		ExtraLicenses = ExtraTaglibLicenses + ExtraVLCLicenses + ExtraGettextLicenses + ExtraLibUVLicenses
 	}
 end
 
@@ -180,7 +182,7 @@ then
 		Name = 'raoliocli',
 		Sources = Item() + 'cli.cxx',
 		Objects = SharedObjects + SharedClientObjects + WindowsIconRes,
-		LinkFlags = LinkFlags .. ' -lreadline -lvlc -ltag'
+		LinkFlags = LinkFlags .. ' -lreadline -ltag' .. VLCLinkFlags
 	}
 
 	local PackageDependencies = PackageDependencies ..

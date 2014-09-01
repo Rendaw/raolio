@@ -4,7 +4,13 @@ RegexTest = Define.Executable
 {
 	Name = 'regex',
 	Sources = Item 'regex.cxx',
-	LinkFlags = tup.getconfig 'PLATFORM' == 'windows' and '-lboost_regex-mt' or '-lboost_regex'
 }
 Define.Test { Executable = RegexTest }
 
+FilesystemTest = Define.Executable
+{
+	Name = 'filesystem',
+	Sources = Item 'filesystem.cxx',
+	Objects = Item() + '../filesystem.o'
+}
+Define.Test { Executable = FilesystemTest }
