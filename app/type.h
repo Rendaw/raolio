@@ -168,8 +168,22 @@ typedef char const * VariantTagT;
 typedef uintptr_t VariantTagT;
 template <typename VariantT> struct VariantIDT { static char Location; };
 template <typename VariantT> char VariantIDT<VariantT>::Location;
+template <typename VariantT> struct VariantIDT<VariantT *> : VariantIDT<VariantT> 
+	{ using VariantIDT<VariantT>::Location; };
+template <typename VariantT> struct VariantIDT<VariantT const *> : VariantIDT<VariantT> 
+	{ using VariantIDT<VariantT>::Location; };
+template <typename VariantT> struct VariantIDT<VariantT &> : VariantIDT<VariantT> 
+	{ using VariantIDT<VariantT>::Location; };
+template <typename VariantT> struct VariantIDT<VariantT &&> : VariantIDT<VariantT> 
+	{ using VariantIDT<VariantT>::Location; };
+template <typename VariantT> struct VariantIDT<VariantT const &> : VariantIDT<VariantT> 
+	{ using VariantIDT<VariantT>::Location; };
 //#define VARIANTTAG reinterpret_cast<uintptr_t>(&UnionT::UnionT)
 //#define VARIANTTAG reinterpret_cast<uintptr_t>((void(*)(UnionT &, UnionT const &, VariantInternalsT<CurrentT, RemainingT...> const &))&VariantInternalsT::VariantInternalsT)
+static_assert(&VariantIDT<int>::Location == &VariantIDT<int &>::Location, "VariantIDT broken.");
+static_assert(&VariantIDT<int>::Location == &VariantIDT<int *>::Location, "VariantIDT broken.");
+static_assert(&VariantIDT<int>::Location == &VariantIDT<int const *>::Location, "VariantIDT broken.");
+static_assert(&VariantIDT<int>::Location == &VariantIDT<int &&>::Location, "VariantIDT broken.");
 #define VARIANTTAG reinterpret_cast<uintptr_t>(&VariantIDT<decltype(this)>::Location)
 #endif
 	

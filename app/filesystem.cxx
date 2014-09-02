@@ -67,7 +67,6 @@ std::string PathElementT::Render(void) const
 		if (!Parts.empty()) Parts.pop_front();
 		for (auto &Part : Parts) Out << Root->Separator << Part->Value;
 	}
-	std::cout << "Rendered " << Out.str() << std::endl;
 	return Out.str();
 }
 	
@@ -210,6 +209,8 @@ OptionalT<std::string> PathElementT::Extension(void) const
 
 PathElementT::PathElementT(PathElementT const *Parent, std::string const &Value) : Value(Value), Parent(Parent) 
 { 
+	Assert(Parent);
+	Assert(this->Parent.Is<PathElementT const *>());
 	++Parent->Count; 
 }
 

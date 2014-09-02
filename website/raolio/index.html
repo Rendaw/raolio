@@ -10,13 +10,13 @@
 body { height: 100%; width: 100%; font-family: sans-serif; }
 
 div#body { min-height: 100%; width: 600px; margin-left: auto; margin-right: auto; }
-div.block { width: 280px; height: 280px; margin: 10px; float: left; }
+div.block { width: 300px; height: 300px; float: left; }
 div.borderouter { width: 100%; height: 100%; overflow: visible; position: relative; }
-div.osize1 { padding: 10px; left: -10px; top: -10px; background-color: rgb(255, 255, 255); }
-div.osize2 { padding: 20px; left: -20px; top: -20px; background-color: rgb(255, 255, 255); }
-div.osize3 { padding: 20px; left: -20px; top: -20px; background-color: rgb(245, 245, 245); }
-div.osize4 { padding: 35px; left: -35px; top: -35px; background-color: rgb(255, 255, 255); }
-div.osize5 { padding: 45px; left: -45px; top: -45px; background-color: rgb(240, 235, 235); }
+div.osize1 { padding: 0px; left: -0px; top: -0px; background-color: rgb(255, 255, 255); }
+div.osize2 { padding: 10px; left: -10px; top: -10px; background-color: rgb(255, 255, 255); }
+div.osize3 { padding: 10px; left: -10px; top: -10px; background-color: rgb(245, 245, 245); }
+div.osize4 { padding: 25px; left: -25px; top: -25px; background-color: rgb(255, 255, 255); }
+div.osize5 { padding: 35px; left: -35px; top: -35px; background-color: rgb(240, 235, 235); }
 .ocolorbg { background-color: rgb(120, 108, 114) }
 div.ocolor1 { background-color: rgb(254, 253, 253) }
 div.ocolor2 { background-color: rgb(248, 244, 245) }
@@ -26,15 +26,19 @@ div.ocolor5 { background-color: rgb(215, 194, 197) }
 div.ocolor6 { background-color: rgb(203, 177, 181) }
 div.ocolor7 { background-color: rgb(182, 149, 154) }
 div.ocolor8 { background-color: rgb(121, 78, 84) }
-div.borderinner { width: 260px; height: 260px; display: flex; align-items: center; justify-content: center; text-align: justify; padding: 10px; position: relative; z-index: 999; }
+div.borderouter2 { padding: 10px; position: relative; z-index: 998; }
+div.borderinner { width: 260px; height: 260px; display: flex; align-items: center; justify-content: center; text-align: justify; padding: 10px; }
 div.icolor1 { background-color: rgb(158, 214, 247); }
 div.icolor2 { background-color: rgb(236, 247, 253); }
 
 h2 { font-size: 1em; }
-a { text-decoration: none; width: 100%; color: rgb(133, 86, 247); }
+a:not(.imag) { text-decoration: none; width: 100%; color: rgb(133, 86, 247); border: 1px solid transparent; }
+a:nth-child(odd) { background-color: rgba(255, 255, 255, 0.2); }
 a.block, span.block { display: block; text-align: center; }
-a:hover { text-decoration: underline; }
-a#final { font-size: 40px; padding-top: 40px; }
+a:hover { background-color: rgba(255, 255, 255, 0.2); }
+a:hover:nth-child(odd) { background: none; border: 1px solid rgba(255, 255, 255, 0.3); }
+a.image { background: none; border: none; }
+a#final { font-size: 40px; padding-top: 40px; color: black; text-decoration: none; }
 img { vertical-align: bottom; width: 240px; height: 240px; }
 a img { border: 1px solid black; }
 td:first-child { font-family: monospace; padding-right: 8px; }
@@ -45,41 +49,41 @@ td { vertical-align: top; }
 <body class="ocolorbg">
 
 <div id="body">
-	<div class="block"><div class="borderouter osize2 ocolor1"><div class="borderinner icolor1">
+	<div class="block"><div class="borderouter osize2 ocolor1"><div class="borderouter2 ocolor1"><div class="borderinner icolor1">
 		<img src="logo.png" alt="Raolio">
-	</div></div></div>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize1 ocolor3"><div class="borderinner icolor2">
+	<div class="block"><div class="borderouter osize1 ocolor3"><div class="borderouter2 ocolor3"><div class="borderinner icolor1">
 		<div><strong>Raolio</strong> is a media player that synchronizes playback with other connected Raolio media players.  Raolio is intended for private media performances in office or long-distance situations where turning the volume up really high isn't a solution. <a class="block" href="https://github.com/Rendaw/raolio">Source</a><a class="block" href="http://zarbosoft.com/forum/index.php?board=10.0">Forums</a></div>
-	</div></div></div>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize1 ocolor2"><div class="borderinner icolor1">
+	<div class="block"><div class="borderouter osize1 ocolor2"><div class="borderouter2 ocolor2"><div class="borderinner icolor1">
 		<div>
 			<h2>Get Raolio</h2>
-			The latest version is 0, updated Dec. 27, 2013.
-			<span class="block">Arch x64 <a href="raolioserver-0-1-x86_64.pkg.tar.xz">Server</a> <a href="raoliogui-0-1-x86_64.pkg.tar.xz">GUI</a> <a href="raoliocli-0-1-x86_64.pkg.tar.xz">CLI</a></span>
+			The latest version is 0, updated Sept. 02, 2014.
+			<span class="block">Arch x64 <span></span><a href="raolioserver-0-1-x86_64.pkg.tar.xz">Server</a> <a href="raoliogui-0-1-x86_64.pkg.tar.xz">GUI</a> <a href="raoliocli-0-1-x86_64.pkg.tar.xz">CLI</a></span>
+			<span class="block">Windows x64 <span></span><a href="raolioserver-0-x86_64.7z">Server</a> <a href="raoliogui-0-x86_64.7z">GUI</a></span>
 			<!-- Can't build it for now: <a href="raolio_0_i386.deb">Version 0, Ubuntu 12+ 32-bit</a>-->
-			<!-- libuv isn't supported until 14.04 <span class="block">Ubuntu x64 <a href="raolioserver_0_amd64.deb">Server</a> <a href="raoliogui_0_amd64.deb">GUI</a> <a href="raoliocli_0_amd64.deb">CLI</a></span>-->
-			<!-- Not working, currently <span class="block">Windows x64 <a href="raoliogui-0-x86_64.7z">GUI</a></span>-->
+			<!-- stdlib regexes aren't supported until 14.10 <span class="block">Ubuntu x64 <a href="raolioserver_0_amd64.deb">Server</a> <a href="raoliogui_0_amd64.deb">GUI</a> <a href="raoliocli_0_amd64.deb">CLI</a></span>-->
 		</div>
-	</div></div></div>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize4 ocolor4"><div class="borderinner icolor1">
-		<a class="block" href="screenshot1.png"><img src="screenshot1thumb.png" alt="Screenshot"></a>
-	</div></div></div>
+	<div class="block"><div class="borderouter osize4 ocolor4"><div class="borderouter2 ocolor4"><div class="borderinner icolor2">
+		<a class="block image" href="screenshot1.png"><img src="screenshot1thumb.png" alt="Screenshot"></a>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize3 ocolor5"><div class="borderinner icolor1">
-		<a class="block" href="screenshot2.png"><img src="screenshot2thumb.png" alt="Screenshot"></a>
-	</div></div></div>
+	<div class="block"><div class="borderouter osize3 ocolor5"><div class="borderouter2 ocolor5"><div class="borderinner icolor1">
+		<a class="block image" href="screenshot2.png"><img src="screenshot2thumb.png" alt="Screenshot"></a>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize2 ocolor6"><div class="borderinner icolor2">
+	<div class="block"><div class="borderouter osize1 ocolor6"><div class="borderouter2 ocolor6"><div class="borderinner icolor2">
 		<div style="height: 100%;">
 			<h2>GUI Notes</h2>
-			Use host 0.0.0.0 (e.g. "0.0.0.0:20758") to start a server.
+			Use host 0.0.0.0 (e.g. "0.0.0.0:20578") to start a server.
 			<br>
 			<br>
 
-			<h2>GUI Keyboard</h2>
+			<h2>GUI Hotkeys</h2>
 			<table>
 				<tr><td>alt a</td><td>Add files to playlist</td></tr>
 				<tr><td>alt left</td><td>Play previous song</td></tr>
@@ -87,11 +91,11 @@ td { vertical-align: top; }
 				<tr><td>alt space</td><td>Pause/play</td></tr>
 			</table>
 		</div>
-	</div></div></div>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize1 ocolor7"><div class="borderinner icolor2">
+	<div class="block"><div class="borderouter osize1 ocolor7"><div class="borderouter2 ocolor7"><div class="borderinner icolor2">
 		<div style="height: 100%;">
-			<h2>GUI Chat</h2>
+			<h2>GUI Chat Commands</h2>
 			<table>
 				<tr><td>/add</td><td>Add files to playlist</td></tr>
 				<tr><td>/list</td><td>List songs in playlist</td></tr>
@@ -103,18 +107,18 @@ td { vertical-align: top; }
 				<tr><td>/quit</td><td>Quit</td></tr>
 			</table>
 		</div>
-	</div></div></div>
+	</div></div></div></div>
 
-	<div class="block"><div class="borderouter osize5 ocolor8"><div class="borderinner icolor1">
+	<div class="block"><div class="borderouter osize5 ocolor8"><div class="borderouter2 ocolor8"><div class="borderinner icolor1">
 		<div>
-			<div style="text-align: center;">&copy; 2013 Zarbosoft</div>
+			<div style="text-align: center;">&copy; 2014 Zarbosoft</div>
 			<a class="block" href="..">&lt; Zarbosoft</a>
 		</div>
-	</div></div></div>
+	</div></div></div></div>
 
 	<br style="clear: both;">
 
-	<a class="block" id="final" href="#" style="text-decoration: none">...</a>
+	<a class="block" id="final" href="#">...</a>
 </div>
 </body>
 

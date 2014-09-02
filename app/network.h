@@ -35,8 +35,8 @@ template <typename ConnectionType> struct Network
 		UVWatcherData(void) {}
 		UVWatcherData(std::function<void(UVWatcherData<DataType> *)> const &Callback) : Callback(Callback) {}
 
-		static void PreCallback(DataType *Data, int Error)
-			{ assert(Error == 0); auto This = static_cast<UVWatcherData<DataType> *>(Data); This->Callback(This); }
+		static void PreCallback(DataType *Data)
+			{ auto This = static_cast<UVWatcherData<DataType> *>(Data); This->Callback(This); }
 	};
 
 	typedef std::function<ConnectionType *(std::string const &Host, uint16_t Port, uv_tcp_t *Watcher, std::function<void(ConnectionType &Socket)> const &ReadCallback)> CreateConnectionCallback;
@@ -191,7 +191,7 @@ template <typename ConnectionType> struct Network
 			struct sockaddr_in Address;
 			if ((Error = uv_ip4_addr(Host.c_str(), Port, &Address)))
 				throw ConstructionErrorT() << Local("Invalid address (^0:^1)", Host, Port);
-			if ((Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address))))
+			if ((Error = uv_tcp_bind(Watcher, reinterpret_cast<sockaddr *>(&Address), 0)))
 				throw ConstructionErrorT() << Local("Failed to bind (^0:^1): ^2", Host, Port, uv_strerror(Error));
 			if ((Error = uv_listen(reinterpret_cast<uv_stream_t *>(Watcher), 2, [](uv_stream_t *Data, int Error) { assert(Error == 0); UVData<uv_tcp_t>::Fix(Data); })))
 				throw ConstructionErrorT() << Local("Failed to listen on (^0:^1): ^2", Host, Port, uv_strerror(Error));

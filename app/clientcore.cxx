@@ -321,8 +321,8 @@ OptionalT<HashT> PlaylistType::GetNextID(void) const
 	}
 	else
 	{
-		if (*Index + 1 >= Playlist.size())
-			return Playlist.front().Hash;
+		if (*Index + 1 >= Playlist.size()) return {};
+			// return Playlist.front().Hash; // Disable looping
 		return Playlist[*Index + 1].Hash;
 	}
 }
@@ -336,8 +336,8 @@ OptionalT<HashT> PlaylistType::GetPreviousID(void) const
 	}
 	else
 	{
-		if (*Index == 0)
-			return Playlist.back().Hash;
+		if (*Index == 0) return {};
+			// return Playlist.back().Hash; // To be consistent
 		return Playlist[*Index - 1].Hash;
 	}
 }
