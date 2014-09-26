@@ -12,8 +12,7 @@ Messages are completely redefined for each new version.
 */
 
 #include "constcount.h"
-#include "error.h"
-#include "type.h"
+#include "../ren-cxx-basics/type.h"
 
 #include <vector>
 #include <functional>

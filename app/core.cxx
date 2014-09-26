@@ -1,16 +1,9 @@
 #include "core.h"
 
 #include "translation/translation.h"
-#include "filesystem_string.h"
+#include "../ren-cxx-filesystem/filesystem_string.h"
 
 #include <random>
-
-#ifdef _WIN32
-#define fopen _wfopen
-#define NATIVE_CAST(WHAT) reinterpret_cast<wchar_t const *>(WHAT)
-#else
-#define NATIVE_CAST(WHAT) reinterpret_cast<char const *>(WHAT)
-#endif
 
 uint64_t GeneratePUID(void) // Probably Unique ID
 {
@@ -182,9 +175,7 @@ void CoreConnection::Handle(NP1V1Request, HashT const &MediaID, uint64_t const &
 	{
 		if (Response.File) { fclose(Response.File); Response.File = nullptr; }
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opening '^0'", Out->second.Path));
-		Response.File = fopen(
-			NATIVE_CAST(ToNativeString(Out->second.Path->Render()).c_str()), 
-			NATIVE_CAST(ToNativeString("r").c_str()));
+		Response.File = Filesystem::fopen_read(Out->second.Path->Render());
 		if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("REND Opened '^0'", Out->second.Path));
 		Assert(Response.File);
 		Assert(!feof(Response.File));
@@ -277,9 +268,7 @@ bool CoreConnection::RequestNext(void)
 		Request.DefaultTitle = PendingRequests.front().DefaultTitle;
 		Request.Path = Parent.TempPath->Enter(FormatHash(Request.ID) + PendingRequests.front().Extension);
 		if (Request.File) { fclose(Request.File); Request.File = nullptr; }
-		Request.File = fopen(
-			NATIVE_CAST(ToNativeString(Request.Path->Render()).c_str()), 
-			NATIVE_CAST(ToNativeString("w").c_str()));
+		Request.File = Filesystem::fopen_write(Request.Path->Render());
 		if (!Request.File)
 		{
 			if (Parent.LogCallback) Parent.LogCallback(Core::Debug, Local("Could not create core library file ^0", Request.Path));

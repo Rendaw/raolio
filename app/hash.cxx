@@ -35,7 +35,7 @@ OptionalT<HashT> UnformatHash(char const *String)
 
 OptionalT<std::pair<HashT, size_t>> HashFile(PathT const &Path)
 {
-	FILE *File(fopen(Path->Render().c_str(), "r"));
+	auto File(Filesystem::fopen_read(Path->Render().c_str()));
 	if (!File) return {};
 
 	size_t Size = 0;

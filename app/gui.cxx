@@ -1,7 +1,7 @@
 #include "regex.h"
 #include "clientcore.h"
 #include "qtaux.h"
-#include "type.h"
+#include "../ren-cxx-basics/type.h"
 #include "translation/translation.h"
 
 #include <QApplication>
@@ -218,7 +218,7 @@ void OpenServerSelect(void)
 		StarDelegate Delegate{History};
 		QIcon ApplicationIcon{RESOURCELOCATION "/raolio.png"};
 	};
-	auto OpenServerData = CreateQTStorage(ConnectWindow, make_unique<ServerData>());
+	auto OpenServerData = CreateQTStorage(ConnectWindow, std::make_unique<ServerData>());
 	auto ServerHistory = &OpenServerData->Data->History;
 	auto HistoryStarDelegate = &OpenServerData->Data->Delegate;
 
@@ -776,7 +776,7 @@ void OpenPlayer(std::string const &InitialHandle, std::string const &Host, uint1
 				AddIcon{RESOURCELOCATION "/add.png"},
 				SortIcon{RESOURCELOCATION "/sort.png"};
 		};
-		auto PlayerData = CreateQTStorage(MainWindow, make_unique<PlayerDataType>(InitialHandle, InitialVolume));
+		auto PlayerData = CreateQTStorage(MainWindow, std::make_unique<PlayerDataType>(InitialHandle, InitialVolume));
 		auto Core = &PlayerData->Data->Core;
 		auto Handle = &PlayerData->Data->Handle;
 		auto Playlist = &PlayerData->Data->Playlist;

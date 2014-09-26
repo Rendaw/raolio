@@ -1,6 +1,6 @@
 #include "clientcore.h"
 
-#include "type.h"
+#include "../ren-cxx-basics/type.h"
 
 #include <taglib/fileref.h>
 

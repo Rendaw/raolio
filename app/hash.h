@@ -1,8 +1,8 @@
 #ifndef hash_h
 #define hash_h
 
-#include "type.h"
-#include "filesystem.h"
+#include "../ren-cxx-basics/type.h"
+#include "../ren-cxx-filesystem/filesystem.h"
 using PathT = Filesystem::PathT;
 
 #include <array>

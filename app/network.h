@@ -2,7 +2,7 @@
 #define network_h
 
 #include "shared.h"
-#include "type.h"
+#include "../ren-cxx-basics/type.h"
 #include "translation/translation.h"
 
 #include <unistd.h>

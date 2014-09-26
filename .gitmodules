@@ -7,3 +7,9 @@
 [submodule "app/translation"]
 	path = app/translation
 	url = ../ren-translation
+[submodule "ren-cxx-filesystem"]
+	path = ren-cxx-filesystem
+	url = ../ren-cxx-filesystem
+[submodule "ren-cxx-basics"]
+	path = ren-cxx-basics
+	url = ../ren-cxx-basics

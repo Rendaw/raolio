@@ -1,4 +1,5 @@
 DoOnce 'app/translation/Tupfile.lua'
+DoOnce 'ren-cxx-filesystem/Tupfile.lua'
 
 local LinkFlags = ' -luv'
 local VLCLinkFlags = ''
@@ -20,8 +21,7 @@ local SharedObjects = Define.Objects
 		+ 'hash.cxx'
 		+ 'md5.c'
 		+ 'network.cxx'
-		+ 'filesystem.cxx'
-} + TranslationObjects
+} + TranslationObjects + FilesystemObjects
 
 local SharedClientObjects = Define.Objects
 {
@@ -105,7 +105,7 @@ then
 	}
 
 	local LinkFlags = LinkFlags
-	if tup.getconfig 'PLATFORM' == 'windows'
+	if tup.getconfig 'PLATFORM' == 'windows' and not IsDebug()
 	then
 		LinkFlags = LinkFlags .. ' -mwindows'
 	end
